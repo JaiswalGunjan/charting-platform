@@ -42,7 +42,7 @@ Lightweight Charts + FastAPI + PostgreSQL/TimescaleDB + Redis + Kite Connect:
 6. First AI feature: "explain this chart" from OHLCV + indicator context.
 
 ## Implementation status (24 Nov 2026)
-Milestones M1–M11 are built: backend (`backend/`, 153 pytest tests) and frontend (`frontend/`,
+Milestones M1–M12 are built: backend (`backend/`, 159 pytest tests) and frontend (`frontend/`,
 React 19 + Vite 7 + lightweight-charts 5.3, v5 `addSeries(XSeries, opts, paneIndex)` API).
 `run-demo.ps1` starts everything. See README.md for the milestone table and API overview.
 Node is a portable copy in `.tools/node` (gitignored); put it on PATH before running npm.
@@ -50,6 +50,9 @@ Real data: the owner keeps adjusted daily bhavcopies (NSE/BSE/NASDAQ/NYSE, 2016+
 `market_data_daily` folder and adjusted hourly bars (2024-10+) in `market_data_hourly`;
 `DATA_SOURCE=eod` + `import-eod` loads both (backend/app/marketdata/eod.py).
 In that mode live ticks are simulated and not persisted (LiveService `persist=False`).
+Chart patterns: `backend/app/patterns/rules.py` is a generated verbatim copy of the owner's rule functions in
+`TranscriptExtract/swingbt/rules/` (bases.py, shapers.py, pocket_pivot.py, cycle.py, support_resistance.py), so
+the chart marks what his backtester trades; regenerate with `python -m app.patterns.sync_rules`, never hand-edit.
 Prototype-stage choices, all cheap to reverse: SQLite default via `DATABASE_URL` (Postgres/
 Timescale ready), in-memory live store unless `REDIS_URL`, single local user (`user_id=1`,
 no auth yet), JSON over WebSocket (binary frames later), live pipeline in Python (Go later).

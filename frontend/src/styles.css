@@ -256,3 +256,16 @@ table.funcs td { padding: 2px 6px 2px 0; vertical-align: top; }
 .modal label.col input { width: 100%; }
 .modal .form-grid label select { width: 160px; }
 .modal .form-grid label input[type="number"] { width: 160px; }
+
+/* chart patterns */
+.pattern-menu { width: 300px; max-height: 560px; padding: 6px; }
+.pattern-actions { display: flex; align-items: center; gap: 4px; padding: 2px 4px 6px; border-bottom: 1px solid var(--border); }
+.pattern-group { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+.pattern-item { display: flex; align-items: center; gap: 8px; padding: 4px 8px; border-radius: 5px; cursor: pointer; }
+.pattern-item:hover { background: var(--panel-2); }
+.pattern-item input, .pattern-group input { margin: 0; }
+.pattern-tag { color: #fff; font-size: 10px; font-weight: 600; padding: 1px 5px; border-radius: 3px; min-width: 30px; text-align: center; }
+.pattern-hit { pointer-events: auto; background: var(--chip); border-radius: 4px; padding: 1px 4px; width: fit-content; max-width: 720px; }
+.pattern-menu .hint { padding: 8px 4px 2px; }
+.pattern-count { min-width: 24px; text-align: right; font-variant-numeric: tabular-nums; color: var(--text); }
+.pattern-count.zero { color: var(--muted); }

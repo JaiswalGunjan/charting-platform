@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { api, type Alert, type CustomDef, type ExplainResult, type Health, type IndicatorMeta, type Quote } from "./api";
+import { api, type Alert, type CustomDef, type ExplainResult, type Health, type IndicatorMeta, type PatternMeta, type Quote } from "./api";
 import { live, type ConnState } from "./live";
 import Chart, { exchangeTimeZone, fmt, type RangeRequest } from "./Chart";
 import SymbolSearch from "./SymbolSearch";
@@ -7,6 +7,7 @@ import { AiPanel, AlertsPanel, WatchlistPanel } from "./Panels";
 import { newIndicator, type ActiveIndicator } from "./indicatorStyle";
 import { CustomEditor, IndicatorPicker, IndicatorSettings } from "./IndicatorDialogs";
 import AlertDialog from "./AlertDialog";
+import PatternMenu, { DEFAULT_PATTERNS } from "./PatternMenu";
 import { RANGES, timeframeForRange, type RangeId } from "./ranges";
 import { useTheme, type Theme } from "./theme";
 
@@ -56,7 +57,11 @@ export default function App() {
   const [quote, setQuote] = useState<Quote | null>(null);
   const [conn, setConn] = useState<ConnState>("connecting");
   const [toasts, setToasts] = useState<Toast[]>([]);
-  const [menu, setMenu] = useState<"tf" | null>(null);
+  const [menu, setMenu] = useState<"tf" | "patterns" | null>(null);
+  const [patterns, setPatterns] = usePersisted<string[]>("patterns", DEFAULT_PATTERNS);
+  const [patternMetas, setPatternMetas] = useState<PatternMeta[]>([]);
+  const [patternCounts, setPatternCounts] = useState<Record<string, number>>({});
+  useEffect(() => setPatternCounts({}), [symbol, tf]); // counts belong to one chart
   const [dialog, setDialog] = useState<Dialog | null>(null);
   const [range, setRange] = useState<RangeRequest | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -74,6 +79,7 @@ export default function App() {
     live.connect();
     const offState = live.onState(setConn);
     api.health().then(setHealth, () => {});
+    api.patterns().then(setPatternMetas, () => {});
     // drop saved chart entries whose indicator no longer exists (e.g. a deleted custom one)
     reloadMetas().then((m) => setIndicators((xs) => xs.filter((x) => m[x.id])), () => {});
     return offState;
@@ -179,6 +185,15 @@ export default function App() {
         </div>
         <div className="sep" />
         <button onClick={() => setDialog({ kind: "picker" })}>ƒx Indicators</button>
+        <div className="menu-anchor">
+          <button className={menu === "patterns" ? "active" : ""} title="Show/hide chart patterns"
+            onClick={() => setMenu(menu === "patterns" ? null : "patterns")}>
+            ◈ Patterns{patterns.length ? <span className="muted small"> {patterns.length}</span> : null}
+          </button>
+          {menu === "patterns" && (
+            <PatternMenu metas={patternMetas} enabled={patterns} counts={patternCounts} onChange={setPatterns} />
+          )}
+        </div>
         <button title="Create alert (Alt+A)" onClick={() => setDialog({ kind: "alert" })}>
           <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"
             style={{ verticalAlign: "-3px", marginRight: 4 }}>
@@ -214,6 +229,9 @@ export default function App() {
             aiLevels={aiLevels}
             onRemoveIndicator={(k) => setIndicators((xs) => xs.filter((x) => x.key !== k))}
             onEditIndicator={(key) => setDialog({ kind: "settings", key })}
+            patterns={patterns}
+            onPatternCounts={setPatternCounts}
+            wantPatternCounts={menu === "patterns"}
             onToggleIndicator={(k) => setIndicators((xs) => xs.map((x) => (x.key === k ? { ...x, hidden: !x.hidden } : x)))}
           />
           <div className="rangebar">

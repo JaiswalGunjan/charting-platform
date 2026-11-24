@@ -19,6 +19,9 @@ export interface Drawing {
   text?: string;
   locked?: boolean;
   hidden?: boolean;
+  dash?: boolean;   // overlay (pattern) shapes only
+  label?: string;   // overlay (pattern) shapes only
+  labelAt?: "start" | "end"; // where a segment's label goes (start: above its left end; end: below its right end)
 }
 
 /** Points a tool needs (brush: open-ended, finished on mouse-up). */
@@ -210,6 +213,7 @@ export interface RenderState {
   fmt: (p: number) => string;
   barsBetween: (t1: number, t2: number) => number;
   textColor: string;
+  labelBg?: string;   // background behind shape labels (chart background, slightly transparent)
 }
 
 function draw(ctx: CanvasRenderingContext2D, w: number, h: number, s: RenderState) {
@@ -228,7 +232,7 @@ function draw(ctx: CanvasRenderingContext2D, w: number, h: number, s: RenderStat
     ctx.lineJoin = "round";
 
     if (d.kind === "rect" && xy[0] && xy[1]) {
-      ctx.globalAlpha = 0.12;
+      ctx.globalAlpha = d.dash ? 0.06 : 0.12;
       ctx.fillRect(xy[0].x, xy[0].y, xy[1].x - xy[0].x, xy[1].y - xy[0].y);
       ctx.globalAlpha = 1;
     }
@@ -271,7 +275,15 @@ function draw(ctx: CanvasRenderingContext2D, w: number, h: number, s: RenderStat
         ctx.setLineDash([]);
       }
     } else {
+      if (d.dash) ctx.setLineDash([5, 4]);
       for (const [a, b] of segments(d, xy, w, h)) line(ctx, a, b);
+      ctx.setLineDash([]);
+      if (d.label && xy[0] && xy[1]) {
+        const [l, r] = xy[0].x <= xy[1].x ? [xy[0], xy[1]] : [xy[1], xy[0]];
+        const at = d.kind === "rect" ? { x: l.x + 3, y: Math.min(l.y, r.y) - 4 }
+          : d.labelAt === "end" ? { x: r.x - 4, y: r.y + 16 } : { x: l.x + 3, y: l.y - 4 };
+        chip(ctx, d.label, at.x, at.y, d.color, s.labelBg ?? "#ffffffcc");
+      }
       if (d.kind === "arrow" && xy[0] && xy[1]) arrowHead(ctx, xy[0], xy[1], 8 + d.width * 2);
       if ((d.kind === "hline" || d.kind === "hray") && xy[0]) {
         priceTag(ctx, s.fmt(d.pts[0].p), w - 2, xy[0].y, d.color);
@@ -290,6 +302,17 @@ function line(ctx: CanvasRenderingContext2D, a: XY, b: XY) {
   ctx.moveTo(a.x, a.y);
   ctx.lineTo(b.x, b.y);
   ctx.stroke();
+}
+
+/** Text on a small background (bottom-left at x, y) so labels stay readable over candles and grid. */
+function chip(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, color: string, bg: string) {
+  ctx.font = "600 11px Inter, Segoe UI, sans-serif";
+  ctx.textBaseline = "alphabetic";
+  const w = ctx.measureText(text).width;
+  ctx.fillStyle = bg;
+  ctx.fillRect(x - 3, y - 12, w + 6, 16);
+  ctx.fillStyle = color;
+  ctx.fillText(text, x, y);
 }
 
 function handle(ctx: CanvasRenderingContext2D, q: XY, color: string) {

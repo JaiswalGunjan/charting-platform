@@ -17,6 +17,7 @@ Blueprint: `docs/BLUEPRINT.md`. Context for Claude Code: `CLAUDE.md`.
 | M8 | Real data: adjusted daily + hourly CSV import; 12 timeframes incl. yearly; date-range presets | done |
 | M9 | 50 indicators (5 categories, price-source input, per-plot style) + formula-based custom indicators | done |
 | M10 | Day / night theme (day by default, one-click toggle) | done |
+| M12 | Chart patterns from the owner's rulebook (S/R, pocket pivot, BBR, wedge pop, CWH, VCP, ... 19 toggles) | done |
 | M11 | Drawing tools (13 tools, magnet, saved per symbol); NSE + BSE + NASDAQ + NYSE with company names; exchange-local sessions | done |
 
 ## Run the demo (one command)
@@ -101,6 +102,18 @@ server-side refusal fallback; tune with `AI_MODEL` / `AI_EFFORT`. `POST /ai/expl
 | `/watchlists` (CRUD) · `/watchlists/{id}/items` | Watchlists |
 | `/alerts` (CRUD) · `GET /alerts/events` | Price alerts: `crosses_above`, `crosses_below`, `above`, `below` |
 | `POST /ai/explain` | `{symbol, tf, to?, dry_run?}` → structured analysis + disclaimer + context |
+
+## Chart patterns
+
+The **◈ Patterns** menu turns 19 patterns on or off: support/resistance, pocket pivot, change in
+character, wedge pop, MA crossback, base and break, cup with handle, VCP, flat base, high tight flag,
+bad break recovery, 1-2-3, oversold shaper, three-touch trendline, mini coil, natural reaction, squat,
+momentum pullback and quiet breakout. The rules are the owner's rulebook code, copied unchanged from
+`TranscriptExtract/swingbt/rules/` into `backend/app/patterns/rules.py` by
+`python -m app.patterns.sync_rules`. Their features (`features.py`) port `swingbt/indicators.py`.
+`tests/test_m12_patterns.py` checks bar-by-bar parity with swingbt when that folder exists.
+`GET /patterns/scan?symbol&tf&ids&limit` returns markers, shapes (base, pivot, contractions, lines,
+coil box) and S/R levels. Only hits that pass the rule's hard checks are shown.
 
 ## Custom indicators (formula language)
 

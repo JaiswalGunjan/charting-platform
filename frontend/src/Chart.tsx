@@ -14,7 +14,9 @@ import {
   type SeriesType,
   type UTCTimestamp,
 } from "lightweight-charts";
-import { api, type Alert, type IndicatorMeta, type KeyLevel, type LiveBar } from "./api";
+import { createSeriesMarkers, type ISeriesMarkersPluginApi, type SeriesMarker, type Time } from "lightweight-charts";
+import { api, type Alert, type IndicatorMeta, type KeyLevel, type LiveBar, type PatternMarker, type PatternScan } from "./api";
+import { DrawingsPrimitive, Mapper, type Drawing } from "./drawings";
 import { live } from "./live";
 import { indicatorLabel, plotStyle, type ActiveIndicator } from "./indicatorStyle";
 import { rangeStart, type RangeId } from "./ranges";
@@ -77,6 +79,9 @@ interface Props {
   onRemoveIndicator: (key: string) => void;
   onEditIndicator: (key: string) => void;
   onToggleIndicator: (key: string) => void;
+  patterns: string[];                                   // enabled chart-pattern ids
+  onPatternCounts?: (counts: Record<string, number>) => void;
+  wantPatternCounts?: boolean;                          // pattern menu open: count every pattern, shown or not
 }
 
 interface Legend {
@@ -104,6 +109,8 @@ export default function Chart(props: Props) {
   const [dataVersion, setDataVersion] = useState(0);
   const [status, setStatus] = useState<string>("loading…");
   const [legend, setLegend] = useState<Legend | null>(null);
+  const [hoverTime, setHoverTime] = useState<number | null>(null);
+  const [scanRes, setScanRes] = useState<PatternScan | null>(null);
   const [, setLiveBar] = useState<LiveBar | null>(null);
   const [apiObjs, setApiObjs] = useState<{ chart: IChartApi; series: ISeriesApi<"Candlestick"> } | null>(null);
   rangeRef.current = range;
@@ -137,6 +144,7 @@ export default function Chart(props: Props) {
       const vd = p.seriesData.get(volume.current!) as { value: number } | undefined;
       if (d) setLegend({ o: d.open, h: d.high, l: d.low, c: d.close, v: vd?.value ?? 0 });
       else setLegend(null);
+      setHoverTime(p.time === undefined ? null : (p.time as number));
     });
     chart.current = c;
     setApiObjs({ chart: c, series: candles.current });
@@ -374,6 +382,100 @@ export default function Chart(props: Props) {
     };
   }, [indicators, metas, dataVersion, symbol, tf, theme]);
 
+  // ---- chart patterns (rulebook rules, scanned server-side) ------------------------
+  const markerApi = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
+  const themeRef = useRef(CHART_THEME[theme].bg);
+  themeRef.current = CHART_THEME[theme].bg;
+  const overlay = useRef<Drawing[]>([]);
+  const overlayPrim = useRef<DrawingsPrimitive | null>(null);
+  const patternKey = props.patterns.join(",");
+  useEffect(() => {
+    if (!apiObjs) return;
+    const { chart: c, series } = apiObjs;
+    markerApi.current = createSeriesMarkers(series, []);
+    const times = () => bars.current.map((b) => b.t);
+    const mapper = new Mapper(c, series, times);
+    const prim = new DrawingsPrimitive(() => ({
+      drawings: overlay.current, draft: null, selected: null, hover: null, mapper,
+      fmt, barsBetween: () => 0, textColor: CHART_THEME[theme].text, labelBg: `${themeRef.current}cc`,
+    }));
+    series.attachPrimitive(prim);
+    overlayPrim.current = prim;
+    return () => {
+      series.detachPrimitive(prim);
+      markerApi.current?.detach();
+      markerApi.current = null;
+      overlayPrim.current = null;
+    };
+  }, [apiObjs]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    const n = bars.current.length;
+    if (!patternKey || !n) {
+      setScanRes(null);
+      return;
+    }
+    let cancelled = false;
+    const h = setTimeout(() => {
+      api.patternScan(symbol, tf, props.patterns, Math.min(n, MAX_IND_BARS)).then(
+        (r) => !cancelled && setScanRes(r),
+        () => !cancelled && setScanRes(null),
+      );
+    }, 150);
+    return () => {
+      cancelled = true;
+      clearTimeout(h);
+    };
+  }, [symbol, tf, patternKey, dataVersion]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    const r = scanRes;
+    const counts: Record<string, number> = {};
+    for (const m of r?.markers ?? []) counts[m.pattern] = (counts[m.pattern] ?? 0) + 1;
+    if (r?.levels.length) counts.sr = r.levels.length;
+    const ms: SeriesMarker<Time>[] = (r?.markers ?? []).map((m) => ({
+      time: toChart(m.t), position: "belowBar", color: m.color,
+      shape: m.pattern === "cic" ? "circle" : "arrowUp", text: m.text, size: m.pattern === "cic" ? 0.6 : 1,
+    }));
+    ms.sort((a, b) => (a.time as number) - (b.time as number));
+    markerApi.current?.setMarkers(ms);
+    overlay.current = (r?.shapes ?? []).map((s, k) => ({
+      id: `pat${k}`, kind: s.kind === "rect" ? "rect" : "trend", pts: s.pts, color: s.color, width: 1,
+      dash: s.dash, label: s.label, labelAt: s.label_at,
+    }));
+    overlayPrim.current?.update();
+    const series = candles.current!;
+    const lines: IPriceLine[] = (r?.levels ?? []).map((lv) => series.createPriceLine({
+      price: lv.price, color: lv.kind === "resistance" ? "#e5484d" : "#089981", lineStyle: LineStyle.LargeDashed,
+      lineWidth: 1, axisLabelVisible: true, title: `${lv.kind === "resistance" ? "R" : "S"} ×${lv.touches}`,
+    }));
+    return () => lines.forEach((l) => series.removePriceLine(l));
+  }, [scanRes]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    const n = bars.current.length;
+    if (!props.wantPatternCounts || !n) return;
+    let cancelled = false;
+    const h = setTimeout(() => {
+      api.patternCounts(symbol, tf, Math.min(n, MAX_IND_BARS)).then(
+        (r) => !cancelled && props.onPatternCounts?.(r.counts),
+        () => {},
+      );
+    }, 100);
+    return () => {
+      cancelled = true;
+      clearTimeout(h);
+    };
+  }, [symbol, tf, props.wantPatternCounts, dataVersion]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // pattern hits on the hovered bar (or the last bar) for the legend
+  const hoverHits: PatternMarker[] = (() => {
+    const ms = scanRes?.markers ?? [];
+    if (!ms.length) return [];
+    const at = hoverTime ?? (bars.current.length ? toChart(bars.current[bars.current.length - 1].t) : null);
+    return at === null ? [] : ms.filter((m) => toChart(m.t) === at);
+  })();
+
   // ---- price lines: alerts + AI key levels ------------------------------------
   useEffect(() => {
     const s = candles.current!;
@@ -414,6 +516,12 @@ export default function Chart(props: Props) {
           )}
           {status && <span className="muted">{status}</span>}
         </div>
+        {hoverHits.map((m, k) => (
+          <div className="legend-row pattern-hit" key={k} title={m.rules.join(", ")}>
+            <span className="pattern-tag" style={{ background: m.color }}>{m.text}</span>
+            <span>{m.notes[0] ?? ""}</span>
+          </div>
+        ))}
         {indicators.map((ind) => {
           const meta = metas[ind.id];
           const color = meta ? plotStyle(ind, meta, meta.outputs[0]).color : undefined;

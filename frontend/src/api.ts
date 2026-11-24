@@ -65,6 +65,49 @@ export interface CustomOut extends CustomDef {
   warmup: number;
 }
 
+export interface PatternMeta {
+  id: string;
+  title: string;
+  group: string;
+  short: string;
+  color: string;
+  rule: string;
+  about: string;
+}
+
+export interface PatternMarker {
+  pattern: string;
+  t: number;
+  text: string;
+  color: string;
+  notes: string[];
+  rules: string[];
+}
+
+export interface PatternShape {
+  pattern: string;
+  kind: "segment" | "rect";
+  color: string;
+  dash: boolean;
+  label: string;
+  label_at: "start" | "end";
+  pts: { t: number; p: number }[];
+}
+
+export interface PatternLevel {
+  price: number;
+  touches: number;
+  first_t: number;
+  last_t: number;
+  kind: "support" | "resistance";
+}
+
+export interface PatternScan {
+  markers: PatternMarker[];
+  shapes: PatternShape[];
+  levels: PatternLevel[];
+}
+
 export interface Health {
   status: string;
   data_source: string;
@@ -204,6 +247,11 @@ export const api = {
   saveDrawings: (symbol: string, items: unknown[]) =>
     req<{ symbol: string; items: unknown[] }>(`/drawings?${qs({ symbol })}`, { method: "PUT", body: JSON.stringify({ items }) }),
   exchanges: () => req<{ exchange: string; symbols: number }[]>("/exchanges"),
+  patterns: () => req<PatternMeta[]>("/patterns"),
+  patternScan: (symbol: string, tf: string, ids: string[], limit: number) =>
+    req<PatternScan>(`/patterns/scan?${qs({ symbol, tf, ids: ids.join(","), limit })}`),
+  patternCounts: (symbol: string, tf: string, limit: number) =>
+    req<{ counts: Record<string, number>; bars: number }>(`/patterns/counts?${qs({ symbol, tf, limit })}`),
   customIndicators: () => req<CustomOut[]>("/custom-indicators"),
   checkCustom: (d: CustomDef) =>
     req<{ ok: boolean; warmup: number }>("/custom-indicators/check", { method: "POST", body: JSON.stringify(d) }),
