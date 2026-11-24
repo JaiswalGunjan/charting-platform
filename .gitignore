@@ -1,0 +1,24 @@
+.env
+.env.*
+!.env.example
+__pycache__/
+*.pyc
+.venv/
+venv/
+node_modules/
+dist/
+.idea/
+.DS_Store
+
+# local data
+backend/data/
+*.db
+*.db-wal
+*.db-shm
+.pytest_cache/
+
+# portable toolchain
+.tools/
+node_modules/
+frontend/dist/
+*.tsbuildinfo
