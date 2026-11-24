@@ -20,9 +20,10 @@ observability).
 
 ## Decisions so far
 - Chart engine: TradingView Lightweight Charts (Apache 2.0, attribution to TradingView
-  required) for the MVP; custom Canvas/WebGL engine later. The in-chart logo is off at the
-  owner's request (24 Nov 2026); keep the footer "Charts by TradingView Lightweight Charts™"
-  link, which is the required attribution.
+  required) for the MVP; custom Canvas/WebGL engine later. The in-chart logo and the footer credit are off at
+  the owner's request (24 Nov 2026). The licence still requires its attribution notice and a link to
+  tradingview.com on a page available to users: that is the About dialog (footer "About" link,
+  App.tsx). Never remove it.
 - Frontend: React + TypeScript + Vite (Next.js only for public SEO pages).
 - Hot path services (feed handlers, WebSocket fan-out, alerts): Go.
 - Product/quant/AI services: Python (FastAPI).
@@ -42,7 +43,7 @@ Lightweight Charts + FastAPI + PostgreSQL/TimescaleDB + Redis + Kite Connect:
 6. First AI feature: "explain this chart" from OHLCV + indicator context.
 
 ## Implementation status (24 Nov 2026)
-Milestones M1–M12 are built: backend (`backend/`, 188 pytest tests; 43 Vitest + 15 Playwright tests in `frontend/tests`) and frontend (`frontend/`,
+Milestones M1–M12 are built: backend (`backend/`, 224 pytest tests; 65 Vitest + 19 Playwright tests in `frontend/tests`) and frontend (`frontend/`,
 React 19 + Vite 7 + lightweight-charts 5.3, v5 `addSeries(XSeries, opts, paneIndex)` API).
 `run-demo.ps1` starts everything. See README.md for the milestone table and API overview.
 Node is a portable copy in `.tools/node` (gitignored); put it on PATH before running npm.
@@ -53,6 +54,8 @@ In that mode live ticks are simulated and not persisted (LiveService `persist=Fa
 Chart patterns: `backend/app/patterns/rules.py` is a generated verbatim copy of the owner's rule functions in
 `TranscriptExtract/swingbt/rules/` (bases.py, shapers.py, pocket_pivot.py, cycle.py, support_resistance.py), so
 the chart marks what his backtester trades; regenerate with `python -m app.patterns.sync_rules`, never hand-edit.
+Patterns-today dashboard: `app/patterns/screener.py` (latest-bar screen per exchange and 1D/1W, saved as JSON in
+backend/data/screens; `app.cli screen`), API `app/api/screener.py`, UI `frontend/src/PatternsToday.tsx`.
 SwingScanner: `backend/app/api/scanner.py` reads the owner's scanner bundle (`SCANNER_DIR`: scans/*/signals.csv,
 near_misses.csv, market.json, portfolio.json) and proxies run/job to its local server (:8765); read-only.
 Prototype-stage choices, all cheap to reverse: SQLite default via `DATABASE_URL` (Postgres/

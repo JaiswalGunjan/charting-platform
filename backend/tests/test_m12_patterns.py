@@ -77,6 +77,7 @@ def test_pattern_api(client):
     meta = client.get("/patterns").json()
     ids = [m["id"] for m in meta]
     assert {"sr", "pp", "bbr", "wedge_pop", "cwh", "vcp"} <= set(ids)
+    assert all(m["summary"] for m in meta)                 # every pattern has a plain-English line
     r = client.get("/patterns/scan", params=dict(symbol="NSE:RELIANCE", tf="1D", ids="pp,cic,sr,wedge_pop", limit=300))
     assert r.status_code == 200
     body = r.json()

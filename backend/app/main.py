@@ -8,7 +8,7 @@ from sqlalchemy.orm import sessionmaker
 
 from app.ai.analyst import ChartAnalyst
 from app.alerts.engine import AlertEngine
-from app.api import ai, alerts, custom_indicators, drawings, history, indicators, patterns, scanner, symbols, watchlists, ws
+from app.api import ai, alerts, custom_indicators, drawings, history, indicators, patterns, scanner, screener, symbols, watchlists, ws
 from app.config import get_settings
 from app.db import SessionLocal, init_db
 from app.live.service import LiveService
@@ -63,7 +63,7 @@ def create_app(live_factory: LiveFactory = default_live,
         allow_methods=["*"],
         allow_headers=["*"],
     )
-    for r in (symbols, history, indicators, custom_indicators, drawings, patterns, scanner, ws, watchlists, alerts, ai):
+    for r in (symbols, history, indicators, custom_indicators, drawings, patterns, scanner, screener, ws, watchlists, alerts, ai):
         app.include_router(r.router)
 
     @app.get("/health")

@@ -36,7 +36,8 @@ The frontend includes symbol search, a timeframe dropdown (1m to yearly), an **A
 through history, and live candles and quotes over WebSocket. It has 50 indicators (searchable
 picker, inputs and per-line colour/width/visibility) and custom formula indicators. A ☀ Day / ☾ Night
 button in the top bar switches the theme (day by default; the choice is remembered). The
-Lightweight Charts attribution is the footer link (the in-chart logo is turned off).
+Lightweight Charts attribution the licence requires (notice + link to tradingview.com) is on the **About**
+page (footer link); the in-chart logo and footer credit are off.
 
 Drawing tools (left toolbar): trend line, ray, extended line, arrow, horizontal line/ray, vertical
 line, parallel channel, rectangle, Fibonacci retracement, brush, text and a measure tool. Use
@@ -57,9 +58,9 @@ un-tests.ps1 -SkipE2E # without the browser tests
 
 | Suite | Where | What it guards |
 |---|---|---|
-| Backend, pytest (188) | `backend/tests/` | data import (daily/hourly/names/CLI), every timeframe incl. US sessions and paging, all 50 indicators vs reference maths, formula language and its sandbox, live bars and WebSocket, alerts, watchlists, AI analyst (fake LLM), drawings API, chart patterns (parity with swingbt when present) |
-| Frontend unit, Vitest (43) | `frontend/tests/unit/` | date-range presets (incl. month-end clamping), time zones and DST, drawing geometry, time<->pixel mapping and hit-testing, indicator labels/styles, number formats |
-| Browser end-to-end, Playwright (15) | `frontend/tests/e2e/` | every user flow in a real browser: load, live ticks, symbol search, timeframe menu, ranges, theme, indicators and settings, custom formulas, drawing tools and saving, pattern menu and counts, alerts |
+| Backend, pytest (224) | `backend/tests/` | data import (daily/hourly/names/CLI), every timeframe incl. US sessions and paging, all 50 indicators vs reference maths, formula language and its sandbox, live bars and WebSocket, alerts, watchlists, AI analyst (fake LLM), drawings API, chart patterns (parity with swingbt when present) |
+| Frontend unit, Vitest (65) | `frontend/tests/unit/` | date-range presets (incl. month-end clamping), time zones and DST, drawing geometry, time<->pixel mapping and hit-testing, indicator labels/styles, number formats |
+| Browser end-to-end, Playwright (19) | `frontend/tests/e2e/` | every user flow in a real browser: load, live ticks, symbol search, timeframe menu, ranges, theme, indicators and settings, custom formulas, drawing tools and saving, pattern menu and counts, alerts |
 
 The end-to-end tests start their own backend on :8010 with a fresh, seeded synthetic database and a dev server
 on :5180, so your data and running servers are never touched. Locally they use the installed Microsoft Edge;
@@ -133,6 +134,16 @@ momentum pullback and quiet breakout. The rules are the owner's rulebook code, c
 `tests/test_m12_patterns.py` checks bar-by-bar parity with swingbt when that folder exists.
 `GET /patterns/scan?symbol&tf&ids&limit` returns markers, shapes (base, pivot, contractions, lines,
 coil box) and S/R levels. Only hits that pass the rule's hard checks are shown.
+
+## Patterns formed today (dashboard)
+
+**▦ Patterns today** in the top bar lists every stock of an exchange whose latest **daily** or **weekly** bar formed
+one of the rulebook patterns. Pick one pattern or several and match **any** of them or **all together**. You can
+also set a minimum 50-bar median turnover (₹ Cr / $M) and search. Clicking a stock opens its chart with those
+patterns switched on. Results are screened in one pass per exchange (bars read in batches; the rules run on the last
+bar only: NSE ~45 s daily, ~65 s weekly). They are saved in `backend/data/screens/` and refreshed with **Screen now**
+or `python -m app.cli screen --exchanges NSE --tf "1D,1W"`; schedule the command after the nightly import.
+Weekly = the current week so far. API: `GET /screener/patterns-today?exchange&tf`, `POST .../run`, `GET .../job`.
 
 ## SwingScanner connection
 

@@ -5,9 +5,10 @@ import Chart, { exchangeTimeZone, fmt, type RangeRequest } from "./Chart";
 import SymbolSearch from "./SymbolSearch";
 import { AiPanel, AlertsPanel, WatchlistPanel } from "./Panels";
 import { newIndicator, type ActiveIndicator } from "./indicatorStyle";
-import { CustomEditor, IndicatorPicker, IndicatorSettings } from "./IndicatorDialogs";
+import { CustomEditor, IndicatorPicker, IndicatorSettings, Modal } from "./IndicatorDialogs";
 import AlertDialog from "./AlertDialog";
 import ScannerPanel from "./ScannerPanel";
+import PatternsToday from "./PatternsToday";
 import PatternMenu, { DEFAULT_PATTERNS } from "./PatternMenu";
 import { RANGES, timeframeForRange, type RangeId } from "./ranges";
 import { useTheme, type Theme } from "./theme";
@@ -40,6 +41,7 @@ function usePersisted<T>(key: string, init: T): [T, (v: T | ((o: T) => T)) => vo
 interface Toast { id: number; text: string }
 type Dialog =
   | { kind: "picker" }
+  | { kind: "about" }
   | { kind: "alert" }
   | { kind: "settings"; key: string }
   | { kind: "custom"; id?: string; def?: CustomDef };
@@ -62,6 +64,7 @@ export default function App() {
   const [patterns, setPatterns] = usePersisted<string[]>("patterns", DEFAULT_PATTERNS);
   const [patternMetas, setPatternMetas] = useState<PatternMeta[]>([]);
   const [scanSignal, setScanSignal] = useState<ScannerSignal | null>(null);
+  const [view, setView] = usePersisted<"chart" | "today">("view", "chart");
   const openSignal = (sig: ScannerSignal) => {
     setScanSignal(sig);
     setSymbol(sig.symbol);
@@ -203,6 +206,8 @@ export default function App() {
             <PatternMenu metas={patternMetas} enabled={patterns} counts={patternCounts} onChange={setPatterns} />
           )}
         </div>
+        <button className={view === "today" ? "active" : ""} title="Patterns formed on the latest daily / weekly bar, all stocks"
+          onClick={() => setView(view === "today" ? "chart" : "today")}>▦ Patterns today</button>
         <button title="Create alert (Alt+A)" onClick={() => setDialog({ kind: "alert" })}>
           <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"
             style={{ verticalAlign: "-3px", marginRight: 4 }}>
@@ -226,7 +231,20 @@ export default function App() {
       </header>
 
       <main className="main">
-        <div className="chart-col">
+        {view === "today" && (
+          <PatternsToday
+            metas={patternMetas}
+            onClose={() => setView("chart")}
+            onOpen={(row, t, pats) => {
+              setSymbol(row.symbol);
+              setTf(t);
+              setRange(null);
+              setPatterns((ps) => [...new Set([...ps, ...pats])]);
+              setView("chart");
+            }}
+          />
+        )}
+        <div className="chart-col" style={view === "today" ? { display: "none" } : undefined}>
           <Chart
             symbol={symbol}
             tf={tf}
@@ -278,10 +296,23 @@ export default function App() {
             : health?.data_source === "kite" ? "Data: Kite Connect (private use only)." : "Demo data — synthetic."}
           {" "}Not investment advice.
         </span>
-        <span>
-          Charts by <a href="https://www.tradingview.com/lightweight-charts/" target="_blank" rel="noreferrer">TradingView Lightweight Charts™</a>
-        </span>
+        <button className="link footer-about" onClick={() => setDialog({ kind: "about" })}>About</button>
       </footer>
+      {dialog?.kind === "about" && (
+        <Modal onClose={() => setDialog(null)} className="about">
+          <h3>About Charting Lab</h3>
+          <p>A private prototype charting and trading-analysis app. Not investment advice.</p>
+          {/* Licence requirement of the chart library (Apache 2.0 + NOTICE): this attribution notice and a link to
+              tradingview.com must be on a page available to users. Do not remove. */}
+          <h4>Credits</h4>
+          <p className="attribution">
+            Charts are rendered with TradingView Lightweight Charts™, Copyright © 2023 TradingView, Inc.,
+            {" "}<a href="https://www.tradingview.com/" target="_blank" rel="noreferrer">https://www.tradingview.com/</a>
+            {" "}(Apache License 2.0).
+          </p>
+          <div className="modal-actions"><button className="primary" onClick={() => setDialog(null)}>Close</button></div>
+        </Modal>
+      )}
 
       {dialog?.kind === "alert" && (
         <AlertDialog

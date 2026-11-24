@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { PatternMeta } from "./api";
+import { filterPatterns } from "./patternSearch";
 
 export const DEFAULT_PATTERNS = ["sr", "pp", "bbr", "wedge_pop", "cwh", "vcp"];
 
@@ -14,10 +15,8 @@ export default function PatternMenu(props: {
   const [q, setQ] = useState("");
   const search = useRef<HTMLInputElement>(null);
   useEffect(() => search.current?.focus(), []);
-  const ql = q.trim().toLowerCase();
   // search by name, marker text (VCP, BBR...), group or description
-  const metas = !ql ? props.metas : props.metas.filter((m) =>
-    [m.title, m.short, m.group, m.id, m.about].some((x) => x.toLowerCase().includes(ql)));
+  const metas = filterPatterns(props.metas, q);
   const on = new Set(enabled);
   const groups = [...new Set(metas.map((m) => m.group))];
   const toggle = (id: string) => props.onChange(on.has(id) ? enabled.filter((x) => x !== id) : [...enabled, id]);

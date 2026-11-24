@@ -73,6 +73,7 @@ export interface PatternMeta {
   color: string;
   rule: string;
   about: string;
+  summary: string;       // one plain-English line
 }
 
 export interface PatternMarker {
@@ -117,6 +118,7 @@ export interface ScannerSignal {
   entry: number | null;  // the scanner's entry = signal-day close
   risk: number | null;   // entry - stop, per share
   buy: boolean;          // valid and "would buy"
+  size_mult: number | null;  // setup multiplier used in sizing
   pattern: string;       // matching chart pattern id, "" if none
   valid: boolean;
   status: string;        // "would buy", ...
@@ -162,9 +164,20 @@ export interface ScannerScan {
   regime: string | null;
   risk_mult: number | null;
   report_href: string;
+  capital: number | null;      // the scan's capital (its quantities were sized on this)
+  risk_pct: number;            // % of equity risked per trade
+  max_alloc_pct: number;       // max % of equity in one position
   signals: ScannerSignal[];
   near_misses: ScannerSignal[];
   setups: Record<string, { name: string; what: string; why: string }>;
+}
+
+export interface SignalExplanation {
+  symbol: string;
+  setup: string;
+  date: string;
+  valid: boolean;
+  sections: { title: string; lines: string[] }[];
 }
 
 export interface ScannerJob {
@@ -174,6 +187,41 @@ export interface ScannerJob {
   ok: boolean | null;
   log: string[];
   next: number;
+}
+
+export interface TodayRow {
+  symbol: string;
+  ticker: string;
+  name: string;
+  type: string;
+  close: number;
+  change_pct: number | null;
+  volume: number;
+  turnover: number;          // 50-bar median of close x volume
+  patterns: string[];
+  hits: { pattern: string; text: string; notes: string[] }[];
+}
+
+export interface ScreenJob {
+  state: "idle" | "running" | "done" | "error";
+  exchange: string;
+  tf: string;
+  done: number;
+  total: number;
+  msg: string;
+}
+
+export interface PatternsToday {
+  exchange: string;
+  tf: string;
+  as_of: number | null;       // the latest bar (epoch s)
+  last_session?: number;
+  rows: TodayRow[];
+  scanned: number;
+  symbols?: number;
+  generated_at?: number;
+  missing: boolean;
+  job: ScreenJob;
 }
 
 export interface Health {
@@ -324,7 +372,14 @@ export const api = {
   scannerScan: (id: string) => req<ScannerScan>(`/scanner/scans/${encodeURIComponent(id)}`),
   scannerRun: (market: string, date?: string) =>
     req<{ ok: boolean; msg: string }>("/scanner/run", { method: "POST", body: JSON.stringify({ market, date }) }),
+  scannerExplain: (scanId: string, symbol: string, setup: string, near: boolean, equity?: number) =>
+    req<SignalExplanation>(`/scanner/scans/${encodeURIComponent(scanId)}/explain?${qs({ symbol, setup, near: near ? "true" : "false", equity })}`),
   scannerJob: (since: number) => req<ScannerJob>(`/scanner/job?since=${since}`),
+  patternsToday: (exchange: string, tf: string) =>
+    req<PatternsToday>(`/screener/patterns-today?${qs({ exchange, tf })}`),
+  runPatternsToday: (exchange: string, tf: string) =>
+    req<{ ok: boolean; job: ScreenJob }>("/screener/patterns-today/run", { method: "POST", body: JSON.stringify({ exchange, tf }) }),
+  patternsTodayJob: () => req<ScreenJob>("/screener/patterns-today/job"),
   customIndicators: () => req<CustomOut[]>("/custom-indicators"),
   checkCustom: (d: CustomDef) =>
     req<{ ok: boolean; warmup: number }>("/custom-indicators/check", { method: "POST", body: JSON.stringify(d) }),

@@ -199,6 +199,8 @@ def get_scan(scan_id: str, near: bool = Query(True)) -> dict:
     mr = meta.get("market_row") or {}
     return dict(id=scan_id, market=market, date=m.group(2), regime=mr.get("regime"), risk_mult=mr.get("risk_mult"),
                 rules=meta.get("rules"), symbols=meta.get("symbols"), report_href=f"{url}/{scan_id}/index.html",
+                capital=meta.get("capital"), risk_pct=(meta.get("config") or {}).get("risk_pct", 1.0),
+                max_alloc_pct=(meta.get("config") or {}).get("max_alloc_pct", 45.0),
                 signals=signals, near_misses=misses, setups=setups)
 
 
@@ -251,3 +253,28 @@ def job(since: int = 0) -> dict:
     if r is None:
         raise HTTPException(503, "The scanner is not running.")
     return r
+
+
+@router.get("/scans/{scan_id}/explain")
+def explain_signal(scan_id: str, symbol: str = Query(..., description="ticker, e.g. MARICO (or NSE:MARICO)"),
+                   setup: str = Query(...), near: bool = Query(False),
+                   equity: float | None = Query(None, gt=0, description="your equity; default: the scan's capital")) -> dict:
+    """A brief 'why this trade' for one signal (or near miss) of a saved scan."""
+    from app.scanner_explain import explain, load_meta, rulebook
+
+    root = scanner_dir()
+    m = SCAN_ID.match(scan_id)
+    if root is None or not m:
+        raise HTTPException(404, "no such scan")
+    folder = scans_dir(root) / scan_id
+    ticker = symbol.split(":")[-1].upper()
+    f = folder / ("near_misses.csv" if near else "signals.csv")
+    row = None
+    if f.is_file():
+        with open(f, encoding="utf-8", newline="") as fh:
+            row = next((r for r in csv.DictReader(fh)
+                        if r.get("symbol", "").upper() == ticker and r.get("setup") == setup), None)
+    if row is None:
+        raise HTTPException(404, f"{ticker} {setup} is not in {scan_id}")
+    info = setup_info(root).get(setup, dict(name=setup, what="", why=""))
+    return explain(row, m.group(1), info, rulebook(root), load_meta(folder), equity)

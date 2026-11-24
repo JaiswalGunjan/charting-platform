@@ -1,9 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, ApiError, type ScannerScan, type ScannerSignal, type ScannerStatus } from "./api";
+import { api, ApiError, type ScannerScan, type ScannerSignal, type ScannerStatus, type SignalExplanation } from "./api";
 import { fmt } from "./format";
+import { lakhs, positionSize, type Size } from "./sizing";
 
-type View = "buy" | "all" | "near";
-const VIEW_LABEL: Record<View, string> = { buy: "Buy setups", all: "All signals", near: "Near misses" };
+type View = "buy" | "near";
+const VIEW_LABEL: Record<View, string> = { buy: "Buy setups", near: "Near misses" };
+const DEFAULT_EQUITY = 1_000_000; // Rs 10 lakh, the scanner's default capital
+const LAKH = 100_000;             // the equity box is in lakh: 1 = Rs 1,00,000
 
 const niceDate = (d: string) =>
   new Date(`${d}T00:00:00Z`).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
@@ -16,10 +19,60 @@ export default function ScannerPanel(props: { selected: ScannerSignal | null; on
   const [scanId, setScanId] = useState<string>("");
   const [scan, setScan] = useState<ScannerScan | null>(null);
   const [view, setView] = useState<View>("buy");
+  const [equity, setEquityState] = useState<number>(() => Number(localStorage.getItem("scanner.equity")) || DEFAULT_EQUITY);
+  const [eqText, setEqText] = useState<string>(() => String(+(equity / LAKH).toFixed(4)));   // what is typed, in lakh
+  const setEquity = (v: number) => {
+    setEquityState(v);
+    if (v > 0) localStorage.setItem("scanner.equity", String(v));
+  };
   const [market, setMarket] = useState("NSE");
   const [job, setJob] = useState<{ state: string; line: string } | null>(null);
   const [error, setError] = useState("");
   const [openSetup, setOpenSetup] = useState<string | null>(null);
+  const [why, setWhy] = useState<SignalExplanation | null>(null);
+  const [setupFilter, setSetupFilter] = useState<string | null>(null);
+  const tableRef = useRef<HTMLTableElement>(null);
+  const showSetup = (code: string, v: View) => {
+    setSetupFilter(code);
+    setView(v);
+    window.setTimeout(() => tableRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
+  };
+  const [whyErr, setWhyErr] = useState("");
+  const whyRef = useRef<HTMLDivElement>(null);
+
+  /** Quantity and position at the user's equity, with the scanner's sizing rule. */
+  const sized = (s: ScannerSignal): Size | null =>
+    !scan || !(equity > 0) || s.entry == null || s.stop == null || !s.valid ? null : positionSize({
+      equity, entry: s.entry, stop: s.stop, riskPct: scan.risk_pct ?? 1, riskMult: scan.risk_mult ?? 1,
+      sizeMult: s.size_mult ?? 1, maxAllocPct: scan.max_alloc_pct ?? 45,
+    });
+  const withSize = (s: ScannerSignal): ScannerSignal => {
+    const z = sized(s);
+    return z ? { ...s, shares: z.shares, value: z.value } : { ...s, shares: null, value: null };
+  };
+  const [picked, setPicked] = useState<{ s: ScannerSignal; near: boolean } | null>(null);
+  const explainFor = (s: ScannerSignal, near: boolean, scroll: boolean) => {
+    setWhyErr("");
+    api.scannerExplain(scanId, s.ticker, s.setup, near, equity > 0 ? equity : undefined).then((e) => {
+      setWhy(e);
+      if (scroll) window.setTimeout(() => whyRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
+    }, (e) => setWhyErr(String(e.message ?? e)));
+  };
+  const pick = (s: ScannerSignal, near: boolean) => {
+    props.onPick(withSize(s));
+    setPicked({ s, near });
+    setWhy(null);
+    explainFor(s, near, true);
+  };
+  // a new equity re-sizes the open explanation and the chart legend
+  useEffect(() => {
+    if (!picked || !(equity > 0)) return;
+    const h = window.setTimeout(() => {
+      props.onPick(withSize(picked.s));
+      explainFor(picked.s, picked.near, false);
+    }, 300);
+    return () => window.clearTimeout(h);
+  }, [equity]); // eslint-disable-line react-hooks/exhaustive-deps
   const polling = useRef<number | null>(null);
 
   const loadStatus = useCallback(async (pickNewest = false) => {
@@ -36,9 +89,12 @@ export default function ScannerPanel(props: { selected: ScannerSignal | null; on
   useEffect(() => {
     if (!scanId) return;
     setScan(null);
+    setWhy(null);
+    setSetupFilter(null);
+    setPicked(null);
     api.scannerScan(scanId).then((s) => {
       setScan(s);
-      setView(s.signals.some((r) => r.buy) ? "buy" : s.signals.length ? "all" : "near");
+      setView(s.signals.length ? "buy" : "near");
     }, (e) => setError(String(e.message ?? e)));
   }, [scanId]);
   useEffect(() => () => { if (polling.current) window.clearInterval(polling.current); }, []);
@@ -74,10 +130,10 @@ export default function ScannerPanel(props: { selected: ScannerSignal | null; on
 
   const markets = (status.markets ?? []).filter((m) => m.ok);
   const running = job?.state === "running";
-  const rows: ScannerSignal[] = !scan ? [] : view === "buy" ? scan.signals.filter((r) => r.buy)
-    : view === "all" ? scan.signals : scan.near_misses;
-  const count = (v: View) => (!scan ? 0 : v === "buy" ? scan.signals.filter((r) => r.buy).length
-    : v === "all" ? scan.signals.length : scan.near_misses.length);
+  const rows: ScannerSignal[] = (!scan ? [] : view === "buy" ? scan.signals : scan.near_misses)
+    .filter((r) => !setupFilter || r.setup === setupFilter);
+  const count = (v: View) => (!scan ? 0 : v === "buy" ? scan.signals.length : scan.near_misses.length);
+  const budget = scan ? equity * ((scan.risk_pct ?? 1) / 100) * (scan.risk_mult ?? 1) : 0;
   const isSel = (s: ScannerSignal) =>
     props.selected?.symbol === s.symbol && props.selected?.setup === s.setup && props.selected?.date === s.date;
 
@@ -132,6 +188,29 @@ export default function ScannerPanel(props: { selected: ScannerSignal | null; on
             {status.online && <> · <a href={scan.report_href} target="_blank" rel="noreferrer">full report ↗</a></>}
           </div>
 
+          <label className="field equity">
+            <div className="row">
+              <span className="muted">₹</span>
+              <input type="number" min={0.01} step="any" value={eqText} aria-label="Equity in lakh"
+                title="Your equity in lakh (1 = ₹1 lakh); quantities are sized with the scanner's rule"
+                onChange={(e) => {
+                  setEqText(e.target.value);
+                  const l = Number(e.target.value);
+                  setEquity(Number.isFinite(l) && l > 0 ? Math.round(l * LAKH) : 0);
+                }} />
+              <span className="muted">lakh</span>
+              {equity !== DEFAULT_EQUITY && (
+                <button className="link small" title="Back to 10 lakh"
+                  onClick={() => { setEquity(DEFAULT_EQUITY); setEqText(String(DEFAULT_EQUITY / LAKH)); }}>reset</button>
+              )}
+            </div>
+            {equity > 0 && (
+              <span className="muted small">
+                Risk per trade {lakhs(budget)} = {scan.risk_pct ?? 1}% x market multiplier {scan.risk_mult ?? 1}; max {scan.max_alloc_pct ?? 45}% in one stock.
+              </span>
+            )}
+          </label>
+
           <nav className="tabs inline scan-views">
             {(Object.keys(VIEW_LABEL) as View[]).map((v) => (
               <button key={v} className={view === v ? "active" : ""} onClick={() => setView(v)}>
@@ -140,22 +219,29 @@ export default function ScannerPanel(props: { selected: ScannerSignal | null; on
             ))}
           </nav>
 
-          <table className="wl scan-table">
+          {setupFilter && (
+            <div className="setup-filter">
+              Showing <span className="tag">{setupFilter}</span> {scan.setups[setupFilter]?.name ?? ""} only
+              <button className="link" onClick={() => setSetupFilter(null)}>show all setups ✕</button>
+            </div>
+          )}
+          <table className="wl scan-table" ref={tableRef}>
             <thead>
               <tr>
                 <th title="The scanner's rank for the day">#</th>
                 <th>Symbol · setup</th>
                 <th title="Entry = the signal day's close">Entry</th>
                 <th title="Stop loss (and its distance below the entry)">SL</th>
-                <th title={view === "near" ? "Score" : "Quantity the scanner would buy (capital and risk rules)"}>
+                <th title={view === "near" ? "Score" : "Quantity at your equity, and the position's share of it"}>
                   {view === "near" ? "Score" : "Qty"}
                 </th>
               </tr>
             </thead>
             <tbody>
-              {rows.map((s) => (
-                <tr key={`${s.symbol}-${s.setup}-${view}`} className={isSel(s) ? "sel" : ""} onClick={() => props.onPick(s)}
-                  title={[s.notes, s.risk != null && `Risk per share: ${fmt(s.risk)}`, s.value != null && `Position value: ${fmt(s.value)}`,
+              {rows.map((s) => { const z = view === "near" ? null : sized(s); return (
+                <tr key={`${s.symbol}-${s.setup}-${view}`} className={isSel(s) ? "sel" : ""} onClick={() => pick(s, view === "near")}
+                  title={[s.notes, s.risk != null && `Risk per share: ${fmt(s.risk)}`,
+                          z && `Position ${fmt(z.value)} (${z.pctOfEquity.toFixed(1)}% of equity), loss at the stop ${fmt(z.lossAtStop)}, sized by ${z.sizedBy}`,
                           s.reject && `Failed: ${s.reject}`, s.weak && `Weak: ${s.weak}`].filter(Boolean).join("\n\n")}>
                   <td>{view === "near" ? "" : s.rank ?? ""}</td>
                   <td>
@@ -164,28 +250,70 @@ export default function ScannerPanel(props: { selected: ScannerSignal | null; on
                   </td>
                   <td>{fmt(s.entry)}</td>
                   <td>{fmt(s.stop)}<div className="muted small">{s.stop_pct != null ? `-${s.stop_pct.toFixed(1)}%` : ""}</div></td>
-                  <td>{view === "near" ? (s.score != null ? s.score.toFixed(1) : "") : (s.shares ?? "—")}</td>
+                  <td>
+                    {view === "near" ? (s.score != null ? s.score.toFixed(1) : "") : z ? (
+                      <>{z.shares.toLocaleString("en-IN")}<div className="muted small">{lakhs(z.value)} · {z.pctOfEquity.toFixed(1)}%</div></>
+                    ) : "—"}
+                  </td>
                 </tr>
-              ))}
+              ); })}
               {!rows.length && (
                 <tr><td colSpan={5} className="muted">
-                  {view === "buy" ? "No buy setups in this scan." : view === "all" ? "No signals in this scan." : "No near misses."}
+                  {view === "buy" ? "No buy setups in this scan." : "No near misses."}
                 </td></tr>
               )}
             </tbody>
           </table>
+
+          {whyErr && <div className="error">{whyErr}</div>}
+          {why && (
+            <div className="why" ref={whyRef}>
+              <div className="panel-head">
+                <span>Why this trade: {why.symbol.split(":")[1]} · {why.setup} · {why.date}</span>
+                <button className="icon" title="Close" onClick={() => setWhy(null)}>✕</button>
+              </div>
+              <ol>
+                {why.sections.map((sec) => (
+                  <li key={sec.title}>
+                    <b>{sec.title}</b>
+                    <ul>{sec.lines.map((l, k) => <li key={k}>{l}</li>)}</ul>
+                  </li>
+                ))}
+              </ol>
+            </div>
+          )}
 
           {Object.keys(scan.setups).length > 0 && (
             <div className="setup-guide">
               <div className="panel-head"><span>Buy setups in this scan</span></div>
               {Object.entries(scan.setups).map(([code, s]) => (
                 <div key={code} className="setup-item">
-                  <button className="setup-title" onClick={() => setOpenSetup(openSetup === code ? null : code)}>
-                    <span className="tag">{code}</span> {s.name}
-                    <span className="muted small"> · {scan.signals.filter((r) => r.setup === code).length} signal(s),{" "}
-                      {scan.near_misses.filter((r) => r.setup === code).length} near</span>
-                    <span className="muted">{openSetup === code ? "▾" : "▸"}</span>
-                  </button>
+                  <div className="setup-title">
+                    <button className="setup-name" title="What this setup is and why it works"
+                      onClick={() => setOpenSetup(openSetup === code ? null : code)}>
+                      <span className="muted">{openSetup === code ? "▾" : "▸"}</span> <span className="tag">{code}</span> {s.name}
+                    </button>
+                    <span className="setup-counts small">
+                      {(() => {
+                        const nSig = scan.signals.filter((r) => r.setup === code).length;
+                        const nNear = scan.near_misses.filter((r) => r.setup === code).length;
+                        return (
+                          <>
+                            <button className="link" disabled={!nSig} onClick={() => showSetup(code, "buy")}
+                              title="Stocks where this setup formed and passed every hard rule: the scanner's trades">
+                              {nSig} buy signal{nSig === 1 ? "" : "s"}
+                            </button>
+                            {" · "}
+                            <button className="link" disabled={!nNear} onClick={() => showSetup(code, "near")}
+                              title="Stocks where this setup formed but failed at least one hard rule: not bought">
+                              {nNear} near miss{nNear === 1 ? "" : "es"}
+                            </button>
+                            <span className="muted"> (formed, failed a hard rule)</span>
+                          </>
+                        );
+                      })()}
+                    </span>
+                  </div>
                   {openSetup === code && (
                     <div className="setup-text">
                       {s.what && <p>{s.what}</p>}

@@ -78,6 +78,28 @@ PATTERNS: list[Pattern] = [
             "Close above the 20-bar high on 1.4x volume after a quiet 5 bars of smaller range and volume "
             "(S1-R011, R074)."),
 ]
+# one plain-English line per pattern for lists and the dashboard (the `about` text has the rule details)
+SUMMARY = {
+    "sr": "Price levels where swing highs and lows cluster (3+ touches)",
+    "pp": "Up day whose volume beats every down day of the last 10 sessions, near the 10-day average",
+    "cic": "Up day on the heaviest volume of the last 22, 66 or 250 sessions",
+    "wedge_pop": "First up day popping above the falling 10 and 20 averages as they flatten",
+    "crossback": "First pullback to the 10-day average after it crosses above the 20-day",
+    "base_break": "Close above a short sideways base that held above the rising 10-day average",
+    "cwh": "Breakout from a 4-26 week cup (up to 40% deep) with a small, quiet handle",
+    "vcp": "Breakout after two or more ever-smaller pullbacks with rising lows",
+    "flat": "Breakout from a sideways base of 5+ weeks no deeper than 30%",
+    "htf": "After a 100%+ run, a tight 2-8 week flag (20% deep at most) breaks out",
+    "bbr": "Shakeout below the 50/21-day average, reclaimed, then a second pocket pivot",
+    "one23": "Break above the line through two MACD-histogram peaks on pocket-pivot volume",
+    "oversold": "In an uptrend, stochastic oversold, then a close above the falling trendline",
+    "tl3": "Close above a falling trendline touched three or more times",
+    "minicoil": "Two or more tight inside bars after a pocket pivot, then a close above it",
+    "natural": "Pullback after a breakout that holds the old resistance, then turns up",
+    "squat": "Breakout that slips back, recovers, holds on light volume and resumes",
+    "momentum": "First 4-10 day dip to the 10/20-day average after a 10%+ breakout run",
+    "quiet": "Close above the 20-day high on heavy volume after a few quiet, tight days",
+}
 BY_ID = {p.id: p for p in PATTERNS}
 BASE_KIND = {"CWH": "cwh", "VCP": "vcp", "FLAT": "flat", "HTF": "htf"}
 PER_BAR = {"pp": R.pocket_pivot, "bbr": R.bad_break_recovery, "one23": R.one_two_three,

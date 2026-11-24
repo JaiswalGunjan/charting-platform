@@ -2,7 +2,7 @@ import { expect, openApp, resetBackend, test } from "./fixtures";
 
 test.beforeEach(async ({ request }) => resetBackend(request));
 
-test("app loads: chart, quote, live badge, watchlist, attribution", async ({ page }) => {
+test("app loads: chart, quote, live badge, watchlist; attribution on the About page", async ({ page }) => {
   await openApp(page);
   await expect(page.locator(".legend-row").first()).toContainText("NSE:RELIANCE");
   await expect(page.locator(".legend-row").first()).toContainText("· 1D");
@@ -10,9 +10,15 @@ test("app loads: chart, quote, live badge, watchlist, attribution", async ({ pag
   await expect(page.locator(".quote b")).toHaveText(/[\d,]+\.\d\d/);
   await expect(page.locator(".conn")).toContainText(/Simulated ticks|Live/);
   await expect(page.locator(".wl tbody tr").first()).toBeVisible();
-  // attribution: footer link kept, no TradingView logo inside the chart
-  await expect(page.locator("footer a", { hasText: "TradingView Lightweight Charts" })).toBeVisible();
+  // no TradingView branding on the screen; the licence's attribution notice + link live on the About page
   await expect(page.locator('.chart a[href*="tradingview"]')).toHaveCount(0);
+  await expect(page.locator("footer")).not.toContainText("TradingView");
+  await page.locator("footer").getByRole("button", { name: "About" }).click();
+  const about = page.locator(".modal.about");
+  await expect(about).toContainText("TradingView Lightweight Charts™, Copyright © 2023 TradingView, Inc.");
+  await expect(about.locator('a[href="https://www.tradingview.com/"]')).toBeVisible();
+  await about.getByRole("button", { name: "Close" }).click();
+  await expect(about).toHaveCount(0);
 });
 
 test("live ticks move the quote", async ({ page }) => {

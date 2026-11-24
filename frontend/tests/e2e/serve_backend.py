@@ -32,6 +32,7 @@ os.environ.update(
     LIVE_ENABLED="true",
     ANTHROPIC_API_KEY="",
     SCANNER_DIR=str(scanner),
+    SCREENS_DIR=str(tmp / "screens"),   # never overwrite the owner's saved "patterns today" screens
     SCANNER_URL="http://127.0.0.1:9",   # nothing listens there: the scanner reads as offline
 )
 sys.path.insert(0, str(backend))

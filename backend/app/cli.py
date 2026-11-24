@@ -7,6 +7,7 @@
     python -m app.cli seed            # init + symbols + 30d of 1m + 5y of 1D for the whole universe
     python -m app.cli kite-login      # daily Kite access-token flow
     python -m app.cli import-eod --dir <market_data_daily> --exchanges NSE   # real daily (+ hourly) history from CSVs
+    python -m app.cli screen [--exchanges NSE --tf 1D,1W]                    # patterns formed today (dashboard)
     python -m app.cli update-names                                            # company names from exchange lists
     python -m app.cli import-eod --only hourly                                # just the 1h bars (EOD_HOURLY_DIR)
 """
@@ -108,6 +109,20 @@ def cmd_import_eod(args: argparse.Namespace) -> None:
                       f"from {r.files:,} files in {r.seconds}s")
 
 
+def cmd_screen(args: argparse.Namespace) -> None:
+    """'Patterns formed today' for the dashboard (schedule it after the nightly data import)."""
+    from app.patterns.screener import run_screen
+
+    settings = get_settings()
+    init_db()
+    exchanges = [e.strip().upper() for e in (args.exchanges.split(",") if args.exchanges else settings.eod_exchanges)]
+    for ex in exchanges:
+        for tf in args.tf.replace(",", " ").split():         # "1D,1W" or "1D 1W" (PowerShell splits commas)
+            r = run_screen(SessionLocal, ex, tf)
+            print(f"{ex} {tf}: {len(r['rows']):,} symbols with patterns on the latest bar, of {r['scanned']:,} "
+                  f"screened, in {r.get('seconds', 0)}s")
+
+
 def cmd_update_names(args: argparse.Namespace) -> None:
     from app.marketdata.eod import apply_names
 
@@ -156,6 +171,10 @@ def main(argv: list[str] | None = None) -> None:
     ie.add_argument("--exchanges", default="", help="e.g. NSE or NSE,BSE,NASDAQ,NYSE (default: EOD_EXCHANGES)")
     ie.add_argument("--refresh-names", action="store_true", help="re-download the public listing files")
     ie.set_defaults(fn=cmd_import_eod)
+    sc = sub.add_parser("screen", help="patterns formed on the latest bar, for the dashboard")
+    sc.add_argument("--exchanges", default="", help="default: EOD_EXCHANGES")
+    sc.add_argument("--tf", default="1D,1W", help="1D, 1W or 1D,1W")
+    sc.set_defaults(fn=cmd_screen)
     un = sub.add_parser("update-names", help="refresh company names from public exchange listings")
     un.add_argument("--exchanges", default="", help="default: EOD_EXCHANGES")
     un.add_argument("--refresh-names", action="store_true", help="re-download the listing files")

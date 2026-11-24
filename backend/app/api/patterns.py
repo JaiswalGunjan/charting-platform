@@ -14,7 +14,7 @@ from fastapi import APIRouter, HTTPException, Query
 from app.api.deps import SessionDep, symbol_or_404, timeframe_or_400
 from app.marketdata.history import get_bars
 from app.marketdata.timeframes import TIMEFRAMES, Timeframe
-from app.patterns.engine import BY_ID, PATTERNS, WARMUP, scan
+from app.patterns.engine import BY_ID, PATTERNS, SUMMARY, WARMUP, scan
 
 router = APIRouter(prefix="/patterns", tags=["patterns"])
 DAY = 86400
@@ -24,8 +24,8 @@ Basis = Literal["daily", "chart"]
 
 @router.get("")
 def list_patterns() -> list[dict]:
-    return [dict(id=p.id, title=p.title, group=p.group, short=p.short, color=p.color, rule=p.rule, about=p.about)
-            for p in PATTERNS]
+    return [dict(id=p.id, title=p.title, group=p.group, short=p.short, color=p.color, rule=p.rule, about=p.about,
+                 summary=SUMMARY.get(p.id, "")) for p in PATTERNS]
 
 
 def _empty() -> dict:

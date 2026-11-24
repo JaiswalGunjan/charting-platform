@@ -102,8 +102,8 @@ export default function Chart(props: Props) {
       layout: {
         background: { type: ColorType.Solid, color: CHART_THEME[theme].bg },
         fontFamily: "Inter, Segoe UI, system-ui, sans-serif",
-        // no logo on the chart: the Lightweight Charts attribution the licence asks for is the
-        // "Charts by TradingView Lightweight Charts™" link in the page footer (App.tsx)
+        // no logo on the chart: the attribution notice and link the licence asks for are on the About page
+        // (footer "About" link, App.tsx)
         attributionLogo: false,
         panes: { enableResize: true },
       },

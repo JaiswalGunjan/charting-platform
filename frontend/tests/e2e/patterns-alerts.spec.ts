@@ -4,7 +4,7 @@ test.beforeEach(async ({ request }) => resetBackend(request));
 
 test("pattern menu shows counts for every pattern and toggles markers", async ({ page }) => {
   await openApp(page, { patterns: [] });
-  await page.getByRole("button", { name: /Patterns/ }).click();
+  await page.getByRole("button", { name: /◈ Patterns/ }).click();
   const items = page.locator(".pattern-item");
   await expect(items).toHaveCount(19);
   // every pattern gets a number, ticked or not
@@ -18,7 +18,7 @@ test("pattern menu shows counts for every pattern and toggles markers", async ({
   await ppItem.locator("input").check();
   const body = await (await scan).json();
   expect(body.markers.filter((m: { pattern: string }) => m.pattern === "pp")).toHaveLength(ppCount);
-  await expect(page.getByRole("button", { name: /Patterns/ })).toContainText("1");
+  await expect(page.getByRole("button", { name: /◈ Patterns/ })).toContainText("1");
 
   // group checkbox, None and Defaults
   await page.locator(".pattern-group", { hasText: "Bases" }).locator("input").check();
@@ -28,12 +28,12 @@ test("pattern menu shows counts for every pattern and toggles markers", async ({
   await page.getByRole("button", { name: "Defaults" }).click();
   await expect(page.locator(".pattern-item input:checked")).toHaveCount(6);
   await page.reload();                                        // the selection is remembered
-  await expect(page.getByRole("button", { name: /Patterns/ })).toContainText("6");
+  await expect(page.getByRole("button", { name: /◈ Patterns/ })).toContainText("6");
 });
 
 test("pattern menu search filters by name, marker text and group", async ({ page }) => {
   await openApp(page, { patterns: [] });
-  await page.getByRole("button", { name: /Patterns/ }).click();
+  await page.getByRole("button", { name: /◈ Patterns/ }).click();
   const search = page.locator(".pattern-search");
   await expect(search).toBeFocused();
   const items = page.locator(".pattern-item");
@@ -51,7 +51,7 @@ test("pattern menu search filters by name, marker text and group", async ({ page
   await expect(page.locator(".pattern-menu")).toContainText("No pattern matches");
   await search.fill("");
   await expect(items).toHaveCount(19);
-  await expect(page.getByRole("button", { name: /Patterns/ })).toContainText("1");
+  await expect(page.getByRole("button", { name: /◈ Patterns/ })).toContainText("1");
 });
 
 test("create an alert from the top bar (Alt+A)", async ({ page, request }) => {
