@@ -8,7 +8,7 @@ from sqlalchemy.orm import sessionmaker
 
 from app.ai.analyst import ChartAnalyst
 from app.alerts.engine import AlertEngine
-from app.api import ai, alerts, history, indicators, symbols, watchlists, ws
+from app.api import ai, alerts, custom_indicators, drawings, history, indicators, symbols, watchlists, ws
 from app.config import get_settings
 from app.db import SessionLocal, init_db
 from app.live.service import LiveService
@@ -25,7 +25,7 @@ def default_live(session_factory: sessionmaker) -> LiveService | None:
     from app.live.ticks import make_tick_source
 
     return LiveService(make_tick_source(settings), make_store(settings.redis_url), session_factory,
-                       throttle_s=settings.ws_throttle_ms / 1000)
+                       throttle_s=settings.ws_throttle_ms / 1000, persist=settings.data_source != "eod")
 
 
 def default_analyst() -> ChartAnalyst:
@@ -63,12 +63,15 @@ def create_app(live_factory: LiveFactory = default_live,
         allow_methods=["*"],
         allow_headers=["*"],
     )
-    for r in (symbols, history, indicators, ws, watchlists, alerts, ai):
+    for r in (symbols, history, indicators, custom_indicators, drawings, ws, watchlists, alerts, ai):
         app.include_router(r.router)
 
     @app.get("/health")
     def health() -> dict:
-        return {"status": "ok", "data_source": settings.data_source, "live": app.state.live is not None}
+        return {"status": "ok", "data_source": settings.data_source, "live": app.state.live is not None,
+                "simulated_ticks": settings.data_source != "kite",
+                # finest stored intraday history: imported CSVs are hourly, Kite/synthetic are 1-minute
+                "intraday_history": "1h" if settings.data_source == "eod" else "1m"}
 
     return app
 

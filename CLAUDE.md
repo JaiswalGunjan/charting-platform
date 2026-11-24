@@ -20,7 +20,9 @@ observability).
 
 ## Decisions so far
 - Chart engine: TradingView Lightweight Charts (Apache 2.0, attribution to TradingView
-  required) for the MVP; custom Canvas/WebGL engine later.
+  required) for the MVP; custom Canvas/WebGL engine later. The in-chart logo is off at the
+  owner's request (24 Nov 2026); keep the footer "Charts by TradingView Lightweight Charts™"
+  link, which is the required attribution.
 - Frontend: React + TypeScript + Vite (Next.js only for public SEO pages).
 - Hot path services (feed handlers, WebSocket fan-out, alerts): Go.
 - Product/quant/AI services: Python (FastAPI).
@@ -39,16 +41,26 @@ Lightweight Charts + FastAPI + PostgreSQL/TimescaleDB + Redis + Kite Connect:
 5. Watchlist + simple price alerts.
 6. First AI feature: "explain this chart" from OHLCV + indicator context.
 
-## Implementation status (23 Nov 2026)
-Milestones M1–M7 are built: backend (`backend/`, 68 pytest tests) and frontend (`frontend/`,
+## Implementation status (24 Nov 2026)
+Milestones M1–M11 are built: backend (`backend/`, 153 pytest tests) and frontend (`frontend/`,
 React 19 + Vite 7 + lightweight-charts 5.3, v5 `addSeries(XSeries, opts, paneIndex)` API).
 `run-demo.ps1` starts everything. See README.md for the milestone table and API overview.
 Node is a portable copy in `.tools/node` (gitignored); put it on PATH before running npm.
+Real data: the owner keeps adjusted daily bhavcopies (NSE/BSE/NASDAQ/NYSE, 2016+) in a local
+`market_data_daily` folder and adjusted hourly bars (2024-10+) in `market_data_hourly`;
+`DATA_SOURCE=eod` + `import-eod` loads both (backend/app/marketdata/eod.py).
+In that mode live ticks are simulated and not persisted (LiveService `persist=False`).
 Prototype-stage choices, all cheap to reverse: SQLite default via `DATABASE_URL` (Postgres/
 Timescale ready), in-memory live store unless `REDIS_URL`, single local user (`user_id=1`,
 no auth yet), JSON over WebSocket (binary frames later), live pipeline in Python (Go later).
-Only 1m and 1D candles are stored; all other timeframes are resampled on read, aligned to
-the 09:15 IST session open.
+Stored bases are 1m, 1h and 1D; other timeframes are resampled on read, aligned to the 09:15 IST
+session open in the exchange's own time zone (`Market` in timeframes.py: NSE/BSE 09:15 IST, NASDAQ/
+NYSE 09:30 New York, DST-aware); daily+ bars are stamped at IST midnight of their trading date for
+every exchange. 1h/2h/4h use stored 1h bars when a symbol has them, else 1m. Drawings are a
+Lightweight Charts series primitive (`frontend/src/drawings.ts`), stored per symbol in (time, price). 50 built-in indicators
+live in `app/indicators/registry.py`. Custom indicators use a whitelisted-AST formula language
+(`app/indicators/formula.py`), the agreed first slice of our own scripting language (chosen by the
+owner 24 Nov 2026 over a no-code composer). Its syntax is still open to redesign.
 
 ## Working preferences
 - The owner is an experienced AI architect (LangGraph, Langfuse, A2A, RAG); skip

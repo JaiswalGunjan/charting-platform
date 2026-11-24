@@ -16,26 +16,67 @@ import {
 } from "lightweight-charts";
 import { api, type Alert, type IndicatorMeta, type KeyLevel, type LiveBar } from "./api";
 import { live } from "./live";
-import { indicatorLabel, outputStyle, type ActiveIndicator } from "./indicatorStyle";
+import { indicatorLabel, plotStyle, type ActiveIndicator } from "./indicatorStyle";
+import { rangeStart, type RangeId } from "./ranges";
+import { CHART_THEME, type Theme } from "./theme";
+import DrawingTools from "./DrawingTools";
+import { fmt, fmtVol } from "./format";
 
-// Lightweight Charts renders UTC; shift epoch seconds so axis labels read in IST.
+export { fmt, fmtVol };
+
+// Lightweight Charts renders UTC; shift epoch seconds so axis labels read in exchange time:
+// IST for NSE/BSE, New York (DST-aware) for US intraday bars. Daily+ bars are stamped at IST
+// midnight of their trading date, so they always shift by IST.
 const IST = 19800;
-const toChart = (t: number) => (t + IST) as UTCTimestamp;
+const US = new Set(["NASDAQ", "NYSE"]);
+const nyParts = new Intl.DateTimeFormat("en-US", {
+  timeZone: "America/New_York", hourCycle: "h23", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit",
+});
+const nyCache = new Map<number, number>();
+function nyOffset(t: number): number {
+  const day = Math.floor(t / 86400);
+  let off = nyCache.get(day);
+  if (off === undefined) {
+    const noon = day * 86400 + 43200;
+    const p = Object.fromEntries(nyParts.formatToParts(new Date(noon * 1000)).map((x) => [x.type, x.value]));
+    off = Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour, +p.minute) / 1000 - noon;
+    nyCache.set(day, off);
+  }
+  return off;
+}
+const DAILY = new Set(["1D", "1W", "1M", "1Y"]);
+let shiftFor: (t: number) => number = () => IST;
+const toChart = (t: number) => (t + shiftFor(t)) as UTCTimestamp;
+function setShift(symbol: string, tf: string) {
+  shiftFor = exchangeTimeZone(symbol, tf) === "New York" ? nyOffset : () => IST;
+}
+export function exchangeTimeZone(symbol: string, tf: string): "IST" | "New York" {
+  return US.has(symbol.split(":")[0]) && !DAILY.has(tf) ? "New York" : "IST";
+}
 const PAGE = 500;
+const RANGE_PAGE = 5000;
 const MAX_IND_BARS = 5000;
 
 const UP = "#26a69a";
 const DOWN = "#ef5350";
 
+export interface RangeRequest {
+  id: RangeId;
+  nonce: number; // re-applies the same range (e.g. after a symbol change)
+}
+
 interface Props {
   symbol: string;
   tf: string;
+  theme: Theme;
+  range: RangeRequest | null;
   indicators: ActiveIndicator[];
   metas: Record<string, IndicatorMeta>;
   alerts: Alert[];
   aiLevels: KeyLevel[];
   onRemoveIndicator: (key: string) => void;
   onEditIndicator: (key: string) => void;
+  onToggleIndicator: (key: string) => void;
 }
 
 interface Legend {
@@ -46,8 +87,10 @@ interface Legend {
   v: number;
 }
 
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
 export default function Chart(props: Props) {
-  const { symbol, tf, indicators, metas, alerts, aiLevels } = props;
+  const { symbol, tf, theme, range, indicators, metas, alerts, aiLevels } = props;
   const box = useRef<HTMLDivElement>(null);
   const chart = useRef<IChartApi | null>(null);
   const candles = useRef<ISeriesApi<"Candlestick"> | null>(null);
@@ -56,26 +99,30 @@ export default function Chart(props: Props) {
   const nextTo = useRef<number | null>(null);
   const loadingOlder = useRef(false);
   const gen = useRef(0); // bumps on symbol/tf change; stale responses are dropped
+  const rangeRef = useRef<RangeRequest | null>(range);
+  const applyRangeRef = useRef<((id: RangeId) => void) | null>(null);
   const [dataVersion, setDataVersion] = useState(0);
   const [status, setStatus] = useState<string>("loading…");
   const [legend, setLegend] = useState<Legend | null>(null);
   const [, setLiveBar] = useState<LiveBar | null>(null);
+  const [apiObjs, setApiObjs] = useState<{ chart: IChartApi; series: ISeriesApi<"Candlestick"> } | null>(null);
+  rangeRef.current = range;
+  setShift(symbol, tf);
 
   // ---- chart lifecycle -------------------------------------------------------
   useEffect(() => {
     const c = createChart(box.current!, {
       autoSize: true,
       layout: {
-        background: { type: ColorType.Solid, color: "#0f1218" },
-        textColor: "#a7adbb",
+        background: { type: ColorType.Solid, color: CHART_THEME[theme].bg },
         fontFamily: "Inter, Segoe UI, system-ui, sans-serif",
-        attributionLogo: true, // required attribution for TradingView Lightweight Charts
-        panes: { separatorColor: "#262b36", separatorHoverColor: "#3a4152", enableResize: true },
+        // no logo on the chart: the Lightweight Charts attribution the licence asks for is the
+        // "Charts by TradingView Lightweight Charts™" link in the page footer (App.tsx)
+        attributionLogo: false,
+        panes: { enableResize: true },
       },
-      grid: { vertLines: { color: "#1a1f29" }, horzLines: { color: "#1a1f29" } },
       crosshair: { mode: CrosshairMode.Normal },
-      rightPriceScale: { borderColor: "#262b36" },
-      timeScale: { borderColor: "#262b36", timeVisible: true, secondsVisible: false, rightOffset: 8 },
+      timeScale: { timeVisible: true, secondsVisible: false, rightOffset: 8 },
     });
     candles.current = c.addSeries(CandlestickSeries, {
       upColor: UP, downColor: DOWN, borderVisible: false, wickUpColor: UP, wickDownColor: DOWN,
@@ -92,11 +139,31 @@ export default function Chart(props: Props) {
       else setLegend(null);
     });
     chart.current = c;
+    setApiObjs({ chart: c, series: candles.current });
     return () => {
+      setApiObjs(null);
       c.remove();
       chart.current = null;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // ---- theme -------------------------------------------------------------------
+  useEffect(() => {
+    const p = CHART_THEME[theme];
+    chart.current!.applyOptions({
+      layout: {
+        background: { type: ColorType.Solid, color: p.bg },
+        textColor: p.text,
+        panes: { separatorColor: p.border, separatorHoverColor: p.level },
+      },
+      grid: { vertLines: { color: p.grid }, horzLines: { color: p.grid } },
+      crosshair: { vertLine: { color: p.crosshair, labelBackgroundColor: p.crosshair },
+                   horzLine: { color: p.crosshair, labelBackgroundColor: p.crosshair } },
+      rightPriceScale: { borderColor: p.border },
+      timeScale: { borderColor: p.border },
+    });
+  }, [theme]);
 
   // ---- data: history + live --------------------------------------------------
   useEffect(() => {
@@ -106,22 +173,69 @@ export default function Chart(props: Props) {
     setStatus("loading…");
     setLegend(null);
     let unsubscribe: (() => void) | null = null;
+    let loaded = false;
 
     const render = () => {
       candles.current!.setData(bars.current.map((b) => ({ time: toChart(b.t), open: b.o, high: b.h, low: b.l, close: b.c })));
       volume.current!.setData(bars.current.map(volPoint));
     };
+    const toBars = (h: { t: number[]; o: number[]; h: number[]; l: number[]; c: number[]; v: number[] }) =>
+      h.t.map((t, i) => ({ t, o: h.o[i], h: h.h[i], l: h.l[i], c: h.c[i], v: h.v[i] }));
+
+    // date-range presets: page back until the range is covered, then zoom to it
+    const applyRange = async (id: RangeId) => {
+      if (!bars.current.length) return;
+      const anchor = bars.current[bars.current.length - 1].t;
+      const from = rangeStart(id, anchor);
+      let grew = false;
+      for (let pages = 0; nextTo.current !== null && bars.current[0].t > from && pages < 40; pages++) {
+        while (loadingOlder.current) await sleep(30);
+        if (g !== gen.current || nextTo.current === null) return;
+        loadingOlder.current = true;
+        setStatus("loading history…");
+        try {
+          const h = await api.history(symbol, tf, RANGE_PAGE, nextTo.current);
+          if (g !== gen.current) return;
+          bars.current = [...toBars(h), ...bars.current];
+          nextTo.current = h.next_to;
+          grew = true;
+        } catch (e) {
+          setStatus(String((e as Error).message ?? e));
+          break;
+        } finally {
+          loadingOlder.current = false;
+        }
+      }
+      if (g !== gen.current) return;
+      setStatus("");
+      if (grew) {
+        render();
+        setDataVersion((v) => v + 1);
+      }
+      const ts = chart.current!.timeScale();
+      if (id === "All" || from <= bars.current[0].t) return ts.fitContent();
+      // by bar index, not time: gaps in the data (e.g. stored hourly history ending weeks before
+      // today's live bar) must not leave the view empty; show at least 20 bars
+      const lastIdx = bars.current.length - 1;
+      const firstIdx = Math.min(bars.current.findIndex((b) => b.t >= from), Math.max(0, lastIdx - 19));
+      ts.setVisibleLogicalRange({ from: firstIdx - 0.5, to: lastIdx + 3 });
+    };
+    applyRangeRef.current = (id) => void applyRange(id);
 
     api.history(symbol, tf, PAGE).then(
       (h) => {
         if (g !== gen.current) return;
-        bars.current = h.t.map((t, i) => ({ t, o: h.o[i], h: h.h[i], l: h.l[i], c: h.c[i], v: h.v[i] }));
+        bars.current = toBars(h);
         nextTo.current = h.next_to;
+        loaded = true;
         render();
+        // a manual symbol/timeframe pick starts at normal zoom (a range preset may have zoomed far out)
+        if (!rangeRef.current) chart.current!.timeScale().applyOptions({ barSpacing: 6 });
         chart.current!.timeScale().scrollToRealTime();
         setStatus(bars.current.length ? "" : "no data");
         setDataVersion((v) => v + 1);
         unsubscribe = live.subscribe(symbol, tf);
+        if (rangeRef.current) void applyRange(rangeRef.current.id);
       },
       (e) => g === gen.current && setStatus(String(e.message ?? e)),
     );
@@ -136,7 +250,16 @@ export default function Chart(props: Props) {
     const applyLive = (b: LiveBar) => {
       const arr = bars.current;
       const last = arr[arr.length - 1];
-      if (!last || b.t < last.t) return;
+      if (!last) {
+        // no stored history for this timeframe (e.g. minutes on hourly/daily data): start from live bars
+        if (!loaded) return;
+        arr.push(b);
+        render();
+        setStatus("live bars only — no stored history for this timeframe");
+        setLiveBar(b);
+        return;
+      }
+      if (b.t < last.t) return;
       candles.current!.update({ time: toChart(b.t), open: b.o, high: b.h, low: b.l, close: b.c });
       volume.current!.update(volPoint(b));
       setLiveBar(b); // keeps the legend current when the crosshair is off-chart
@@ -155,8 +278,7 @@ export default function Chart(props: Props) {
         (h) => {
           loadingOlder.current = false;
           if (g !== gen.current) return;
-          const older = h.t.map((t, i) => ({ t, o: h.o[i], h: h.h[i], l: h.l[i], c: h.c[i], v: h.v[i] }));
-          bars.current = [...older, ...bars.current];
+          bars.current = [...toBars(h), ...bars.current];
           nextTo.current = h.next_to;
           render();
           setDataVersion((v) => v + 1);
@@ -169,11 +291,17 @@ export default function Chart(props: Props) {
 
     return () => {
       gen.current++;
+      applyRangeRef.current = null;
       unsubscribe?.();
       offMsg();
       ts.unsubscribeVisibleLogicalRangeChange(onRange);
     };
   }, [symbol, tf]);
+
+  // a range picked while the data is already loaded
+  useEffect(() => {
+    if (range && bars.current.length) applyRangeRef.current?.(range.id);
+  }, [range?.nonce]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ---- indicators ------------------------------------------------------------
   const indSeries = useRef<ISeriesApi<SeriesType>[]>([]);
@@ -182,9 +310,10 @@ export default function Chart(props: Props) {
     const n = bars.current.length;
     let cancelled = false;
     if (!n) return;
+    const visible = indicators.filter((i) => !i.hidden && metas[i.id]);
 
     Promise.all(
-      indicators.map((ind) =>
+      visible.map((ind) =>
         api.indicatorValues(ind.id, symbol, tf, Math.min(n, MAX_IND_BARS), ind.params).catch(() => null),
       ),
     ).then((results) => {
@@ -193,26 +322,32 @@ export default function Chart(props: Props) {
       indSeries.current = [];
       let pane = 0;
       results.forEach((res, i) => {
-        const ind = indicators[i];
+        const ind = visible[i];
         const meta = metas[ind.id];
-        if (!res || !meta) return;
+        if (!res) return;
         const paneIndex = meta.overlay ? 0 : ++pane;
         const times = res.t.map(toChart);
         let first: ISeriesApi<SeriesType> | null = null;
 
         for (const out of meta.outputs) {
-          const st = outputStyle(ind.id, out, ind.key);
-          if (st.hidden) continue;
+          const st = plotStyle(ind, meta, out);
+          if (st.style === "hidden") continue;
           const vals = res.outputs[out];
           let s: ISeriesApi<SeriesType>;
-          if (st.histogram) {
+          if (st.style === "histogram") {
+            const fixed = meta.plots.find((p) => p.name === out)?.color || ind.style?.[out]?.color;
             s = c.addSeries(HistogramSeries, { priceLineVisible: false, lastValueVisible: false }, paneIndex);
             s.setData(times.flatMap((time, k) =>
-              vals[k] === null ? [] : [{ time, value: vals[k]!, color: vals[k]! >= 0 ? "#26a69a99" : "#ef535099" }]));
+              vals[k] === null ? [] : [{
+                time, value: vals[k]!,
+                color: fixed ? `${st.color}aa` : vals[k]! >= 0 ? "#26a69a99" : "#ef535099",
+              }]));
           } else {
+            const dots = st.style === "dots";
             s = c.addSeries(LineSeries, {
-              color: st.color, lineWidth: st.width ?? 1, priceLineVisible: false,
+              color: st.color, lineWidth: st.width, priceLineVisible: false,
               lastValueVisible: !meta.overlay, crosshairMarkerVisible: false,
+              lineVisible: !dots, pointMarkersVisible: dots, pointMarkersRadius: dots ? 1.5 : undefined,
             }, paneIndex);
             const dir = ind.id === "supertrend" ? res.outputs["direction"] : null;
             s.setData(times.flatMap((time, k) => {
@@ -227,7 +362,7 @@ export default function Chart(props: Props) {
         }
         if (first) {
           for (const lv of meta.levels) {
-            first.createPriceLine({ price: lv, color: "#4b5263", lineStyle: LineStyle.Dashed, lineWidth: 1, axisLabelVisible: false });
+            first.createPriceLine({ price: lv, color: CHART_THEME[theme].level, lineStyle: LineStyle.Dashed, lineWidth: 1, axisLabelVisible: false });
           }
         }
       });
@@ -237,7 +372,7 @@ export default function Chart(props: Props) {
     return () => {
       cancelled = true;
     };
-  }, [indicators, metas, dataVersion, symbol, tf]);
+  }, [indicators, metas, dataVersion, symbol, tf, theme]);
 
   // ---- price lines: alerts + AI key levels ------------------------------------
   useEffect(() => {
@@ -265,6 +400,8 @@ export default function Chart(props: Props) {
 
   return (
     <div className="chart-wrap">
+      <DrawingTools chart={apiObjs?.chart ?? null} series={apiObjs?.series ?? null} host={box.current}
+        bars={bars} symbol={symbol} textColor={CHART_THEME[theme].text} />
       <div className="legend">
         <div className="legend-row">
           <span className="legend-sym">{symbol}</span>
@@ -277,15 +414,23 @@ export default function Chart(props: Props) {
           )}
           {status && <span className="muted">{status}</span>}
         </div>
-        {indicators.map((ind) => (
-          <div className="legend-row ind-chip" key={ind.key}>
-            <span>{indicatorLabel(ind, metas[ind.id])}</span>
-            {metas[ind.id]?.params.length ? (
+        {indicators.map((ind) => {
+          const meta = metas[ind.id];
+          const color = meta ? plotStyle(ind, meta, meta.outputs[0]).color : undefined;
+          return (
+            <div className={`legend-row ind-chip${ind.hidden ? " off" : ""}`} key={ind.key}>
+              <span className="swatch" style={{ background: color }} />
+              <button className="chip-label" title="Settings" onClick={() => props.onEditIndicator(ind.key)}>
+                {indicatorLabel(ind, meta)}
+              </button>
+              <button className="icon" title={ind.hidden ? "Show" : "Hide"} onClick={() => props.onToggleIndicator(ind.key)}>
+                {ind.hidden ? "◌" : "◉"}
+              </button>
               <button className="icon" title="Settings" onClick={() => props.onEditIndicator(ind.key)}>⚙</button>
-            ) : null}
-            <button className="icon" title="Remove" onClick={() => props.onRemoveIndicator(ind.key)}>✕</button>
-          </div>
-        ))}
+              <button className="icon" title="Remove" onClick={() => props.onRemoveIndicator(ind.key)}>✕</button>
+            </div>
+          );
+        })}
       </div>
       <div className="chart" ref={box} />
     </div>
@@ -295,9 +440,3 @@ export default function Chart(props: Props) {
 function volPoint(b: LiveBar) {
   return { time: toChart(b.t), value: b.v, color: b.c >= b.o ? "#26a69a55" : "#ef535055" };
 }
-
-export const fmt = (x: number | null | undefined) =>
-  x === null || x === undefined ? "—" : x.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-
-export const fmtVol = (v: number) =>
-  v >= 1e7 ? `${(v / 1e7).toFixed(2)}Cr` : v >= 1e5 ? `${(v / 1e5).toFixed(2)}L` : v >= 1e3 ? `${(v / 1e3).toFixed(1)}K` : String(v);

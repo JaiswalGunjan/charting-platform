@@ -14,7 +14,7 @@ from app.live.ticks import Tick, TickSource
 from app.marketdata.base import Bar, parse_symbol
 from app.marketdata.history import get_bars
 from app.marketdata.loader import resolve_symbol, to_info, upsert_candles
-from app.marketdata.timeframes import TIMEFRAMES, get_timeframe
+from app.marketdata.timeframes import TIMEFRAMES, get_timeframe, market_for
 
 log = logging.getLogger(__name__)
 TickListener = Callable[[Tick, FormingBars], Awaitable[None] | None]
@@ -60,8 +60,9 @@ class Connection:
 
 class LiveService:
     def __init__(self, source: TickSource, store: LiveStore, session_factory: sessionmaker,
-                 throttle_s: float = 0.25, clock: Callable[[], float] = time.time):
+                 throttle_s: float = 0.25, clock: Callable[[], float] = time.time, persist: bool = True):
         self.source = source
+        self.persist = persist  # False: simulated ticks must never be written over real history
         self.store = store
         self.session_factory = session_factory
         self.throttle_s = throttle_s
@@ -182,17 +183,18 @@ class LiveService:
     def _seed(self, symbol_id: int, full: str) -> tuple[FormingBars, float | None]:
         now = self.clock()
         seed: dict[str, LiveBar | None] = {}
+        market = market_for(full.split(":", 1)[0])
         with self.session_factory() as s:
             for name, tf in TIMEFRAMES.items():
                 b = get_bars(s, symbol_id, tf, limit=1)
-                if len(b) and int(b.t[-1]) == live_bucket(tf, now):
+                if len(b) and int(b.t[-1]) == live_bucket(tf, now, market):
                     seed[name] = LiveBar(int(b.t[-1]), float(b.o[-1]), float(b.h[-1]),
                                          float(b.l[-1]), float(b.c[-1]), float(b.v[-1]))
             daily = get_bars(s, symbol_id, TIMEFRAMES["1D"], limit=2)
             last_1m = get_bars(s, symbol_id, TIMEFRAMES["1m"], limit=1)
         prev_close = None
         if len(daily):
-            today = int(daily.t[-1]) == live_bucket(TIMEFRAMES["1D"], now)
+            today = int(daily.t[-1]) == live_bucket(TIMEFRAMES["1D"], now, market)
             idx = -2 if today else -1
             if len(daily) >= abs(idx):
                 prev_close = float(daily.c[idx])
@@ -207,7 +209,7 @@ class LiveService:
         if fb is None:
             return  # late tick after unsubscribe
         res = fb.apply(tick.ts, tick.price, tick.qty)
-        if res.closed_1m is not None:
+        if res.closed_1m is not None and self.persist:
             day = fb.bars.get("1D")
             self._spawn(asyncio.to_thread(self._persist, self.symbol_ids[tick.symbol],
                                           res.closed_1m, LiveBar(**day.as_dict()) if day else None))

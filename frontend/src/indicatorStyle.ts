@@ -1,45 +1,53 @@
-import type { IndicatorMeta } from "./api";
+import type { IndicatorMeta, PlotStyle } from "./api";
+
+export interface PlotOverride {
+  color?: string;
+  width?: 1 | 2 | 3 | 4;
+  hidden?: boolean;
+}
 
 export interface ActiveIndicator {
   key: string; // unique per instance (two EMAs with different lengths)
   id: string;
-  params: Record<string, number>;
+  params: Record<string, number | string>;
+  style?: Record<string, PlotOverride>; // per-output overrides from the settings dialog
+  hidden?: boolean; // whole indicator toggled off from its legend chip
 }
 
-interface OutStyle {
-  color?: string;
-  width?: 1 | 2 | 3 | 4;
-  histogram?: boolean;
-  hidden?: boolean;
+export interface ResolvedStyle {
+  style: PlotStyle;
+  color: string;
+  width: 1 | 2 | 3 | 4;
 }
 
-const STYLES: Record<string, Record<string, OutStyle>> = {
-  bb: { mid: { color: "#f0a43a" }, upper: { color: "#5b8def" }, lower: { color: "#5b8def" } },
-  vwap: { vwap: { color: "#c678dd", width: 2 } },
-  supertrend: { line: { width: 2 }, direction: { hidden: true } },
-  rsi: { rsi: { color: "#c678dd" } },
-  macd: { macd: { color: "#5b8def" }, signal: { color: "#f0a43a" }, hist: { histogram: true } },
-  atr: { atr: { color: "#e06c75" } },
-  stoch: { k: { color: "#5b8def" }, d: { color: "#f0a43a" } },
-  obv: { obv: { color: "#56b6c2" } },
-};
+// single-line indicators without a fixed colour (moving averages) cycle through these
+// per instance, so several MAs on one chart stay distinguishable
+const CYCLE = ["#ff9800", "#2962ff", "#9c27b0", "#00acc1", "#fbc02d", "#43a047", "#e91e63", "#795548"];
+let counter = 0;
+const assigned = new Map<string, string>();
 
-// moving averages cycle through these so several MAs stay distinguishable
-const MA_COLORS = ["#f0a43a", "#5b8def", "#c678dd", "#56b6c2", "#e5c07b", "#98c379"];
-let maCounter = 0;
-const maColor = new Map<string, string>();
-
-export function outputStyle(id: string, out: string, key?: string): OutStyle {
-  const s = STYLES[id]?.[out];
-  if (s) return s;
-  const k = key ?? id;
-  if (!maColor.has(k)) maColor.set(k, MA_COLORS[maCounter++ % MA_COLORS.length]);
-  return { color: maColor.get(k), width: 2 };
+function cycled(key: string): string {
+  if (!assigned.has(key)) assigned.set(key, CYCLE[counter++ % CYCLE.length]);
+  return assigned.get(key)!;
 }
+
+export function plotStyle(ind: ActiveIndicator, meta: IndicatorMeta, out: string): ResolvedStyle {
+  const p = meta.plots.find((x) => x.name === out);
+  const o = ind.style?.[out] ?? {};
+  const idx = meta.plots.findIndex((x) => x.name === out);
+  const base = p?.color ?? (idx <= 0 ? cycled(ind.key) : CYCLE[(idx + 1) % CYCLE.length]);
+  const style: PlotStyle = o.hidden ? "hidden" : p?.style ?? "line";
+  const defaultWidth = meta.overlay && meta.plots.length === 1 ? 2 : 1;
+  return { style, color: o.color ?? base, width: o.width ?? defaultWidth };
+}
+
+const fmtParam = (v: number | string) => (typeof v === "number" ? String(+v.toFixed(4)) : v);
 
 export function indicatorLabel(ind: ActiveIndicator, meta?: IndicatorMeta): string {
   const name = meta?.title ?? ind.id.toUpperCase();
-  const ps = Object.values(ind.params);
+  const ps = (meta?.params ?? []).map((p) => ind.params[p.name] ?? p.default)
+    .filter((v) => v !== "close") // the default source is implied
+    .map(fmtParam);
   return ps.length ? `${name} (${ps.join(", ")})` : name;
 }
 

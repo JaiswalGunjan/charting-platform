@@ -6,13 +6,23 @@ export default function SymbolSearch({ value, onPick }: { value: string; onPick:
   const [open, setOpen] = useState(false);
   const [items, setItems] = useState<SymbolInfo[]>([]);
   const [hi, setHi] = useState(0);
+  const [exchange, setExchange] = useState<string>("");
+  const [exchanges, setExchanges] = useState<{ exchange: string; symbols: number }[]>([]);
   const ref = useRef<HTMLDivElement>(null);
+  const input = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (open && !exchanges.length) api.exchanges().then(setExchanges, () => {});
+  }, [open, exchanges.length]);
 
   useEffect(() => {
     if (!open) return;
-    const t = setTimeout(() => api.searchSymbols(q.trim()).then((r) => (setItems(r), setHi(0)), () => setItems([])), 120);
+    const t = setTimeout(
+      () => api.searchSymbols(q.trim(), exchange || undefined).then((r) => (setItems(r), setHi(0)), () => setItems([])),
+      120,
+    );
     return () => clearTimeout(t);
-  }, [q, open]);
+  }, [q, open, exchange]);
 
   useEffect(() => {
     const close = (e: MouseEvent) => !ref.current?.contains(e.target as Node) && setOpen(false);
@@ -24,13 +34,15 @@ export default function SymbolSearch({ value, onPick }: { value: string; onPick:
     onPick(s.symbol);
     setOpen(false);
     setQ("");
+    input.current?.blur();
   };
 
   return (
     <div className="search" ref={ref}>
       <input
+        ref={input}
         value={open ? q : value}
-        placeholder="Search symbol"
+        placeholder="Search symbol or company"
         onFocus={() => setOpen(true)}
         onChange={(e) => setQ(e.target.value)}
         onKeyDown={(e) => {
@@ -40,16 +52,29 @@ export default function SymbolSearch({ value, onPick }: { value: string; onPick:
           else if (e.key === "Escape") setOpen(false);
         }}
       />
-      {open && items.length > 0 && (
-        <ul className="dropdown">
-          {items.map((s, i) => (
-            <li key={s.symbol} className={i === hi ? "hi" : ""} onMouseDown={() => pick(s)} onMouseEnter={() => setHi(i)}>
-              <b>{s.ticker}</b>
-              <span className="muted">{s.name}</span>
-              <span className="tag">{s.exchange}</span>
-            </li>
-          ))}
-        </ul>
+      {open && (
+        <div className="dropdown">
+          <div className="search-ex">
+            {[{ exchange: "", symbols: exchanges.reduce((a, x) => a + x.symbols, 0) }, ...exchanges].map((x) => (
+              <button key={x.exchange} className={exchange === x.exchange ? "active" : ""}
+                onMouseDown={(e) => { e.preventDefault(); setExchange(x.exchange); }}
+                title={`${x.symbols.toLocaleString()} symbols`}>
+                {x.exchange || "All"} <span className="muted">{x.symbols.toLocaleString()}</span>
+              </button>
+            ))}
+          </div>
+          <ul>
+            {items.map((s, i) => (
+              <li key={s.symbol} className={i === hi ? "hi" : ""} onMouseDown={() => pick(s)} onMouseEnter={() => setHi(i)}>
+                <b>{s.ticker}</b>
+                <span className="muted" title={s.name}>{s.name}</span>
+                {s.type !== "EQ" && <span className="tag">{s.type}</span>}
+                <span className="tag">{s.exchange}</span>
+              </li>
+            ))}
+            {!items.length && <li className="muted">No matches</li>}
+          </ul>
+        </div>
       )}
     </div>
   );

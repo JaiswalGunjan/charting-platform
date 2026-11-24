@@ -100,7 +100,7 @@ def test_indicator_aligned_with_history(client):
     r = client.get("/indicators/ema", params=dict(symbol="NSE:RELIANCE", tf="5m", limit=200, length=50))
     assert r.status_code == 200, r.text
     body = r.json()
-    assert body["t"] == hist["t"] and body["params"] == {"length": 50}
+    assert body["t"] == hist["t"] and body["params"] == {"length": 50, "source": "close"}
     assert all(x is not None for x in body["outputs"]["ema"])  # warm-up came from earlier bars
     assert body["next_to"] == hist["next_to"]
 

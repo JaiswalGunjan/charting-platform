@@ -6,8 +6,12 @@ $nodeDir = Join-Path $root ".tools\node"   # portable Node; falls back to a syst
 if (Test-Path $nodeDir) { $env:Path = "$nodeDir;$env:Path" }
 
 if (-not (Test-Path (Join-Path $root "backend\data\charting.db"))) {
-    Write-Host "First run: seeding synthetic market data (~35s)..."
-    Push-Location (Join-Path $root "backend"); & $py -m app.cli seed; Pop-Location
+    $envFile = Join-Path $root ".env"
+    $eod = (Test-Path $envFile) -and (Select-String -Path $envFile -Pattern '^\s*DATA_SOURCE\s*=\s*eod' -Quiet)
+    Push-Location (Join-Path $root "backend")
+    if ($eod) { Write-Host "First run: importing end-of-day CSVs from EOD_DIR (~1.5 min for NSE)..."; & $py -m app.cli import-eod }
+    else { Write-Host "First run: seeding synthetic market data (~35s)..."; & $py -m app.cli seed }
+    Pop-Location
 }
 if (-not (Test-Path (Join-Path $root "frontend\node_modules"))) {
     Push-Location (Join-Path $root "frontend"); npm install; Pop-Location

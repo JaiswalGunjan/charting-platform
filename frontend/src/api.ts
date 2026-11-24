@@ -26,19 +26,51 @@ export interface History {
 
 export interface IndicatorParam {
   name: string;
-  default: number;
+  default: number | string;
   min: number;
   max: number;
-  kind: string;
+  kind: "int" | "float" | "source";
+  options: string[];
+}
+
+export type PlotStyle = "line" | "histogram" | "dots" | "hidden";
+
+export interface PlotMeta {
+  name: string;
+  style: PlotStyle;
+  color: string | null;
 }
 
 export interface IndicatorMeta {
   id: string;
   title: string;
+  category: string;
   overlay: boolean;
   outputs: string[];
+  plots: PlotMeta[];
   params: IndicatorParam[];
   levels: number[];
+}
+
+export interface CustomDef {
+  name: string;
+  overlay: boolean;
+  inputs: { name: string; default: number; min: number; max: number }[];
+  plots: { name: string; expr: string; style: PlotStyle; color: string | null }[];
+  levels: number[];
+}
+
+export interface CustomOut extends CustomDef {
+  id: string;
+  warmup: number;
+}
+
+export interface Health {
+  status: string;
+  data_source: string;
+  live: boolean;
+  simulated_ticks: boolean;
+  intraday_history: "1m" | "1h";
 }
 
 export interface IndicatorValues {
@@ -127,7 +159,7 @@ export interface ExplainResult {
 }
 
 export class ApiError extends Error {
-  constructor(public status: number, message: string) {
+  constructor(public status: number, message: string, public detail?: unknown) {
     super(message);
   }
 }
@@ -139,13 +171,17 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
   });
   if (!r.ok) {
     let msg = r.statusText;
+    let detail: unknown;
     try {
       const body = await r.json();
-      msg = typeof body.detail === "string" ? body.detail : JSON.stringify(body.detail ?? body);
+      detail = body.detail;
+      msg = typeof detail === "string" ? detail
+        : typeof (detail as { message?: string })?.message === "string" ? (detail as { message: string }).message
+        : JSON.stringify(detail ?? body);
     } catch {
       /* not JSON */
     }
-    throw new ApiError(r.status, msg);
+    throw new ApiError(r.status, msg, detail);
   }
   return r.status === 204 ? (undefined as T) : r.json();
 }
@@ -156,13 +192,25 @@ const qs = (p: Record<string, string | number | undefined | null>) =>
   ).toString();
 
 export const api = {
-  searchSymbols: (q: string) => req<SymbolInfo[]>(`/symbols?${qs({ q, limit: 20 })}`),
+  health: () => req<Health>("/health"),
+  searchSymbols: (q: string, exchange?: string) => req<SymbolInfo[]>(`/symbols?${qs({ q, exchange, limit: 30 })}`),
   timeframes: () => req<string[]>("/timeframes"),
   history: (symbol: string, tf: string, limit: number, to?: number | null) =>
     req<History>(`/history?${qs({ symbol, tf, limit, to })}`),
   indicators: () => req<IndicatorMeta[]>("/indicators"),
-  indicatorValues: (id: string, symbol: string, tf: string, limit: number, params: Record<string, number>) =>
+  indicatorValues: (id: string, symbol: string, tf: string, limit: number, params: Record<string, number | string>) =>
     req<IndicatorValues>(`/indicators/${id}?${qs({ symbol, tf, limit, ...params })}`),
+  drawings: (symbol: string) => req<{ symbol: string; items: unknown[] }>(`/drawings?${qs({ symbol })}`),
+  saveDrawings: (symbol: string, items: unknown[]) =>
+    req<{ symbol: string; items: unknown[] }>(`/drawings?${qs({ symbol })}`, { method: "PUT", body: JSON.stringify({ items }) }),
+  exchanges: () => req<{ exchange: string; symbols: number }[]>("/exchanges"),
+  customIndicators: () => req<CustomOut[]>("/custom-indicators"),
+  checkCustom: (d: CustomDef) =>
+    req<{ ok: boolean; warmup: number }>("/custom-indicators/check", { method: "POST", body: JSON.stringify(d) }),
+  createCustom: (d: CustomDef) => req<CustomOut>("/custom-indicators", { method: "POST", body: JSON.stringify(d) }),
+  updateCustom: (id: string, d: CustomDef) =>
+    req<CustomOut>(`/custom-indicators/${id}`, { method: "PUT", body: JSON.stringify(d) }),
+  deleteCustom: (id: string) => req<void>(`/custom-indicators/${id}`, { method: "DELETE" }),
   quotes: (symbols: string[]) => req<Quote[]>(`/quotes?${qs({ symbols: symbols.join(",") })}`),
 
   watchlists: () => req<Watchlist[]>("/watchlists"),

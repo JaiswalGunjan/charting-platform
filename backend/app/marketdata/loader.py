@@ -23,6 +23,8 @@ def get_source(settings: Settings) -> MarketDataSource:
         from app.marketdata.synthetic import SyntheticSource
 
         return SyntheticSource()
+    if settings.data_source == "eod":
+        raise ValueError("DATA_SOURCE=eod loads history with `python -m app.cli import-eod`")
     raise ValueError(f"unknown DATA_SOURCE {settings.data_source!r}")
 
 

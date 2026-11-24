@@ -15,7 +15,12 @@ class Settings(BaseSettings):
     )
 
     database_url: str = f"sqlite:///{(BACKEND_DIR / 'data' / 'charting.db').as_posix()}"
-    data_source: str = "synthetic"  # "synthetic" | "kite"
+    data_source: str = "synthetic"  # "synthetic" | "kite" | "eod" (local CSV history + simulated ticks)
+
+    # local end-of-day CSVs (python -m app.cli import-eod)
+    eod_dir: str = ""                  # path to a market_data_daily folder
+    eod_hourly_dir: str = ""           # path to a market_data_hourly folder (optional)
+    eod_exchanges: list[str] = ["NSE"]
 
     kite_api_key: str = ""
     kite_api_secret: str = ""

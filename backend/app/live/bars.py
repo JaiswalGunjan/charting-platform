@@ -3,7 +3,8 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from app.marketdata.timeframes import DAY, IST_OFFSET, SESSION_OPEN_OFFSET, TIMEFRAMES, Timeframe, bucket_starts
+from app.marketdata.timeframes import (DAY, IST_MARKET, IST_OFFSET, TIMEFRAMES, Market, Timeframe, bucket_starts,
+                                       local_day, market_for)
 
 
 @dataclass
@@ -29,17 +30,16 @@ def _r(x: float | None) -> float | None:
     return None if x is None else round(x, 4)
 
 
-def live_bucket(tf: Timeframe, ts: float) -> int:
+def live_bucket(tf: Timeframe, ts: float, market: Market = IST_MARKET) -> int:
     """Bucket open for an arbitrary (unaligned) timestamp."""
     ts = int(ts)
-    midnight = ((ts + IST_OFFSET) // DAY) * DAY - IST_OFFSET
-    if tf.base == "1m":
-        open_ = midnight + SESSION_OPEN_OFFSET
-        step = tf.minutes * 60
-        return open_ + ((ts - open_) // step) * step
+    if tf.intraday:
+        return int(bucket_starts(tf, np.array([ts]), market)[0]) if tf.name != "1m" else ts - ts % 60
+    # daily+: the exchange-local trading date, stamped at IST midnight (stored-bar convention)
+    day_bar = int(local_day(np.array([ts]), market)[0]) * DAY - IST_OFFSET
     if tf.name == "1D":
-        return midnight
-    return int(bucket_starts(tf, np.array([midnight]))[0])
+        return day_bar
+    return int(bucket_starts(tf, np.array([day_bar]))[0])
 
 
 @dataclass
@@ -53,6 +53,7 @@ class FormingBars:
     def __init__(self, symbol: str, seed: dict[str, LiveBar | None], prev_close: float | None,
                  tfs: tuple[str, ...] = tuple(TIMEFRAMES)):
         self.symbol = symbol
+        self.market = market_for(symbol.split(":", 1)[0]) if ":" in symbol else IST_MARKET
         self.tfs = {name: TIMEFRAMES[name] for name in tfs}
         self.bars: dict[str, LiveBar | None] = {name: seed.get(name) for name in tfs}
         self.prev_close = prev_close   # previous session's close, for change %
@@ -63,7 +64,7 @@ class FormingBars:
         closed_1m = None
         day_rolled = False
         for name, tf in self.tfs.items():
-            b = live_bucket(tf, ts)
+            b = live_bucket(tf, ts, self.market)
             cur = self.bars[name]
             if cur is None or b > cur.t:
                 if name == "1m" and cur is not None:

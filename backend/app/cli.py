@@ -6,11 +6,15 @@
     python -m app.cli load-candles --symbols all --tf 1D --days 3650
     python -m app.cli seed            # init + symbols + 30d of 1m + 5y of 1D for the whole universe
     python -m app.cli kite-login      # daily Kite access-token flow
+    python -m app.cli import-eod --dir <market_data_daily> --exchanges NSE   # real daily (+ hourly) history from CSVs
+    python -m app.cli update-names                                            # company names from exchange lists
+    python -m app.cli import-eod --only hourly                                # just the 1h bars (EOD_HOURLY_DIR)
 """
 import argparse
 import logging
 import sys
 from datetime import date, timedelta
+from pathlib import Path
 
 from sqlalchemy import select
 
@@ -61,6 +65,62 @@ def cmd_seed(args: argparse.Namespace) -> None:
     cmd_load_candles(argparse.Namespace(symbols="all", tf="1D", days=args.daily_days))
 
 
+NAMES_CACHE = Path(__file__).resolve().parents[1] / "data" / "names"
+
+
+def _names(exchange: str, root: Path | None, refresh: bool):
+    from app.marketdata import names
+
+    got = names.fetch(NAMES_CACHE, force=refresh)
+    if got:
+        print("downloaded public listing files:", ", ".join(got))
+    return names.load(exchange, NAMES_CACHE, root)
+
+
+def cmd_import_eod(args: argparse.Namespace) -> None:
+    from app.marketdata.eod import import_exchange, import_exchange_hourly
+
+    settings = get_settings()
+    parts = {p.strip() for p in args.only.split(",")} if args.only else {"daily", "hourly"}
+    exchanges = [e.strip().upper() for e in (args.exchanges.split(",") if args.exchanges else settings.eod_exchanges)]
+    root = Path(args.dir or settings.eod_dir) if (args.dir or settings.eod_dir) else None
+    hroot = Path(args.hourly_dir or settings.eod_hourly_dir) if (args.hourly_dir or settings.eod_hourly_dir) else None
+    if "daily" in parts and (root is None or not root.is_dir()):
+        sys.exit("pass --dir or set EOD_DIR in .env to your market_data_daily folder")
+    if args.only and "hourly" in parts and (hroot is None or not hroot.is_dir()):
+        sys.exit("pass --hourly-dir or set EOD_HOURLY_DIR in .env to your market_data_hourly folder")
+    init_db()
+    with SessionLocal() as s:
+        for ex in exchanges:
+            names = _names(ex, root, args.refresh_names)
+            if "daily" in parts:
+                r = import_exchange(s, root, ex, names)
+                print(f"{r.exchange}: {r.bars:,} daily bars, {r.symbols:,} symbols, {r.first_date}..{r.last_date} "
+                      f"from {r.files:,} files in {r.seconds}s (removed {r.removed_symbols} symbols not in the files)")
+            if "hourly" in parts and hroot is not None:
+                from app.marketdata.eod import hourly_files
+
+                if not (hroot / ex).is_dir() or not hourly_files(hroot, ex):
+                    print(f"{ex}: no hourly files under {hroot / ex}, skipped")
+                    continue
+                r = import_exchange_hourly(s, hroot, ex, names)
+                print(f"{r.exchange}: {r.bars:,} hourly bars, {r.symbols:,} symbols, {r.first_date}..{r.last_date} "
+                      f"from {r.files:,} files in {r.seconds}s")
+
+
+def cmd_update_names(args: argparse.Namespace) -> None:
+    from app.marketdata.eod import apply_names
+
+    settings = get_settings()
+    root = Path(settings.eod_dir) if settings.eod_dir else None
+    exchanges = [e.strip().upper() for e in (args.exchanges.split(",") if args.exchanges else settings.eod_exchanges)]
+    init_db()
+    with SessionLocal() as s:
+        for ex in exchanges:
+            n = apply_names(s, ex, _names(ex, root, args.refresh_names))
+            print(f"{ex}: {n:,} symbols have a company name")
+
+
 def cmd_kite_login(_: argparse.Namespace) -> None:
     from app.marketdata.kite import exchange_request_token, login_url
 
@@ -89,6 +149,17 @@ def main(argv: list[str] | None = None) -> None:
     sd.add_argument("--minute-days", type=int, default=30)
     sd.add_argument("--daily-days", type=int, default=5 * 365)
     sd.set_defaults(fn=cmd_seed)
+    ie = sub.add_parser("import-eod", help="replace daily (and hourly) history with local adjusted CSVs")
+    ie.add_argument("--dir", default="", help="market_data_daily folder (default: EOD_DIR)")
+    ie.add_argument("--hourly-dir", default="", help="market_data_hourly folder (default: EOD_HOURLY_DIR)")
+    ie.add_argument("--only", default="", help="daily, hourly or daily,hourly (default: both that are configured)")
+    ie.add_argument("--exchanges", default="", help="e.g. NSE or NSE,BSE,NASDAQ,NYSE (default: EOD_EXCHANGES)")
+    ie.add_argument("--refresh-names", action="store_true", help="re-download the public listing files")
+    ie.set_defaults(fn=cmd_import_eod)
+    un = sub.add_parser("update-names", help="refresh company names from public exchange listings")
+    un.add_argument("--exchanges", default="", help="default: EOD_EXCHANGES")
+    un.add_argument("--refresh-names", action="store_true", help="re-download the listing files")
+    un.set_defaults(fn=cmd_update_names)
     sub.add_parser("kite-login").set_defaults(fn=cmd_kite_login)
     args = p.parse_args(argv)
     args.fn(args)

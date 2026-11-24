@@ -37,7 +37,7 @@ class Symbol(Base):
 
 
 class Candle(Base):
-    """OHLCV bar. ts = bar open time, epoch seconds UTC. tf in {"1m", "1D"}."""
+    """OHLCV bar. ts = bar open time, epoch seconds UTC. tf in {"1m", "1h", "1D"}."""
 
     __tablename__ = "candles"
     __table_args__ = (Index("ix_candles_sym_tf_ts", "symbol_id", "tf", "ts"),)
@@ -102,6 +102,39 @@ class AlertEvent(Base):
     ts: Mapped[float] = mapped_column(Float)
     price: Mapped[float] = mapped_column(Float)
     message: Mapped[str] = mapped_column(String(512), default="")
+
+
+class CustomIndicator(Base):
+    """A user's formula indicator (see app/indicators/formula.py).
+
+    inputs_json: [{"name", "default", "min", "max"}]; plots_json: [{"name", "expr", "style", "color"}]
+    """
+    __tablename__ = "custom_indicators"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(Integer, default=LOCAL_USER_ID, index=True)
+    name: Mapped[str] = mapped_column(String(80))
+    overlay: Mapped[bool] = mapped_column(Boolean, default=False)
+    inputs_json: Mapped[list] = mapped_column(JSON, default=list)
+    plots_json: Mapped[list] = mapped_column(JSON, default=list)
+    levels_json: Mapped[list] = mapped_column(JSON, default=list)
+    created_at: Mapped[float] = mapped_column(Float, default=_now)
+    updated_at: Mapped[float] = mapped_column(Float, default=_now)
+
+
+class Drawing(Base):
+    """A user's chart drawings for one symbol (shared by all timeframes).
+
+    items_json: [{"id", "kind", "pts": [{"t": epoch s, "p": price}], "color", "width", "text"?, ...}]
+    """
+    __tablename__ = "drawings"
+    __table_args__ = (UniqueConstraint("user_id", "symbol_id", name="uq_drawings_user_symbol"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(Integer, default=LOCAL_USER_ID, index=True)
+    symbol_id: Mapped[int] = mapped_column(ForeignKey("symbols.id", ondelete="CASCADE"), index=True)
+    items_json: Mapped[list] = mapped_column(JSON, default=list)
+    updated_at: Mapped[float] = mapped_column(Float, default=_now)
 
 
 class AiLog(Base):
