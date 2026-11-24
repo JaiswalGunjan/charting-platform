@@ -42,7 +42,7 @@ Lightweight Charts + FastAPI + PostgreSQL/TimescaleDB + Redis + Kite Connect:
 6. First AI feature: "explain this chart" from OHLCV + indicator context.
 
 ## Implementation status (24 Nov 2026)
-Milestones M1–M12 are built: backend (`backend/`, 159 pytest tests) and frontend (`frontend/`,
+Milestones M1–M12 are built: backend (`backend/`, 188 pytest tests; 43 Vitest + 15 Playwright tests in `frontend/tests`) and frontend (`frontend/`,
 React 19 + Vite 7 + lightweight-charts 5.3, v5 `addSeries(XSeries, opts, paneIndex)` API).
 `run-demo.ps1` starts everything. See README.md for the milestone table and API overview.
 Node is a portable copy in `.tools/node` (gitignored); put it on PATH before running npm.
@@ -53,6 +53,8 @@ In that mode live ticks are simulated and not persisted (LiveService `persist=Fa
 Chart patterns: `backend/app/patterns/rules.py` is a generated verbatim copy of the owner's rule functions in
 `TranscriptExtract/swingbt/rules/` (bases.py, shapers.py, pocket_pivot.py, cycle.py, support_resistance.py), so
 the chart marks what his backtester trades; regenerate with `python -m app.patterns.sync_rules`, never hand-edit.
+SwingScanner: `backend/app/api/scanner.py` reads the owner's scanner bundle (`SCANNER_DIR`: scans/*/signals.csv,
+near_misses.csv, market.json, portfolio.json) and proxies run/job to its local server (:8765); read-only.
 Prototype-stage choices, all cheap to reverse: SQLite default via `DATABASE_URL` (Postgres/
 Timescale ready), in-memory live store unless `REDIS_URL`, single local user (`user_id=1`,
 no auth yet), JSON over WebSocket (binary frames later), live pipeline in Python (Go later).
@@ -64,6 +66,11 @@ Lightweight Charts series primitive (`frontend/src/drawings.ts`), stored per sym
 live in `app/indicators/registry.py`. Custom indicators use a whitelisted-AST formula language
 (`app/indicators/formula.py`), the agreed first slice of our own scripting language (chosen by the
 owner 24 Nov 2026 over a no-code composer). Its syntax is still open to redesign.
+
+## Tests
+`run-tests.ps1` runs backend pytest, frontend type check + Vitest and Playwright end-to-end (isolated seeded backend
+:8010 + Vite :5180, local Edge). Run it before every commit; add tests with every feature (unit tests for logic,
+an e2e flow for anything user-visible). CI: `.github/workflows/ci.yml`.
 
 ## Working preferences
 - The owner is an experienced AI architect (LangGraph, Langfuse, A2A, RAG); skip

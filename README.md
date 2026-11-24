@@ -46,6 +46,25 @@ keep their place across zoom and timeframes, and are saved per symbol (`/drawing
 The sidebar has a watchlist with live quotes, alerts (shown as price lines, with toast
 notifications) and "Explain this chart" (AI key levels are drawn on the chart).
 
+## Tests
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .
+un-tests.ps1          # everything (~1.5 min)
+powershell -ExecutionPolicy Bypass -File .
+un-tests.ps1 -SkipE2E # without the browser tests
+```
+
+| Suite | Where | What it guards |
+|---|---|---|
+| Backend, pytest (188) | `backend/tests/` | data import (daily/hourly/names/CLI), every timeframe incl. US sessions and paging, all 50 indicators vs reference maths, formula language and its sandbox, live bars and WebSocket, alerts, watchlists, AI analyst (fake LLM), drawings API, chart patterns (parity with swingbt when present) |
+| Frontend unit, Vitest (43) | `frontend/tests/unit/` | date-range presets (incl. month-end clamping), time zones and DST, drawing geometry, time<->pixel mapping and hit-testing, indicator labels/styles, number formats |
+| Browser end-to-end, Playwright (15) | `frontend/tests/e2e/` | every user flow in a real browser: load, live ticks, symbol search, timeframe menu, ranges, theme, indicators and settings, custom formulas, drawing tools and saving, pattern menu and counts, alerts |
+
+The end-to-end tests start their own backend on :8010 with a fresh, seeded synthetic database and a dev server
+on :5180, so your data and running servers are never touched. Locally they use the installed Microsoft Edge;
+GitHub Actions (`.github/workflows/ci.yml`) runs all three suites on every push with Chromium.
+
 ## Run the backend
 
 ```powershell
@@ -114,6 +133,17 @@ momentum pullback and quiet breakout. The rules are the owner's rulebook code, c
 `tests/test_m12_patterns.py` checks bar-by-bar parity with swingbt when that folder exists.
 `GET /patterns/scan?symbol&tf&ids&limit` returns markers, shapes (base, pivot, contractions, lines,
 coil box) and S/R levels. Only hits that pass the rule's hard checks are shown.
+
+## SwingScanner connection
+
+Set `SCANNER_DIR` in `.env` to the SwingScanner folder (the one with `SwingScanner.exe`). The sidebar's
+**Scanner** tab then lists its past scans (read from its `scans` folder, also while the scanner is closed). It shows
+the buy setups with entry (the signal day's close), SL and quantity, plus all signals and near misses (with the rule
+that failed). A guide explains each setup in the scan, using the scanner's own `explain.py` text read as data.
+Clicking a row opens the chart with Entry/SL lines and the setup's pattern switched on. While `SwingScanner.exe` is
+running (`SCANNER_URL`, default :8765), **Run scan** starts a new scan and shows its progress. The app never
+writes into the scanner's folders. API: `GET /scanner`, `/scanner/scans/{id}`, `/scanner/setups`,
+`/scanner/portfolio`, `POST /scanner/run`, `GET /scanner/job`.
 
 ## Custom indicators (formula language)
 

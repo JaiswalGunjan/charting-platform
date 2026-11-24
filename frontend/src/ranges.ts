@@ -5,6 +5,16 @@ export type RangeId = (typeof RANGES)[number];
 
 const IST = 19800;
 
+/** Move d back by `months` calendar months, clamping the day to the target month's last day
+ * (31 Mar - 1 month = 28/29 Feb; plain setUTCMonth would roll over to 3 Mar). */
+function monthsBack(d: Date, months: number): void {
+  const day = d.getUTCDate();
+  d.setUTCDate(1);
+  d.setUTCMonth(d.getUTCMonth() - months);
+  const last = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0)).getUTCDate();
+  d.setUTCDate(Math.min(day, last));
+}
+
 /** Start (epoch s) of the range that ends at `anchor` (the last bar), in IST calendar terms. */
 export function rangeStart(id: RangeId, anchor: number): number {
   if (id === "All") return 0;
@@ -13,14 +23,14 @@ export function rangeStart(id: RangeId, anchor: number): number {
   switch (id) {
     case "1D": break;
     case "5D": d.setUTCDate(d.getUTCDate() - 6); break;
-    case "1M": d.setUTCMonth(d.getUTCMonth() - 1); break;
-    case "3M": d.setUTCMonth(d.getUTCMonth() - 3); break;
-    case "6M": d.setUTCMonth(d.getUTCMonth() - 6); break;
+    case "1M": monthsBack(d, 1); break;
+    case "3M": monthsBack(d, 3); break;
+    case "6M": monthsBack(d, 6); break;
     case "YTD": d.setUTCMonth(0, 1); break;
-    case "1Y": d.setUTCFullYear(d.getUTCFullYear() - 1); break;
-    case "3Y": d.setUTCFullYear(d.getUTCFullYear() - 3); break;
-    case "5Y": d.setUTCFullYear(d.getUTCFullYear() - 5); break;
-    case "10Y": d.setUTCFullYear(d.getUTCFullYear() - 10); break;
+    case "1Y": monthsBack(d, 12); break;
+    case "3Y": monthsBack(d, 36); break;
+    case "5Y": monthsBack(d, 60); break;
+    case "10Y": monthsBack(d, 120); break;
   }
   return d.getTime() / 1000 - IST;
 }

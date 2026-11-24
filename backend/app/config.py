@@ -19,6 +19,9 @@ class Settings(BaseSettings):
 
     # local end-of-day CSVs (python -m app.cli import-eod)
     eod_dir: str = ""                  # path to a market_data_daily folder
+    scanner_dir: str = ""              # SwingScanner folder (has SwingScanner.exe, swingbt_config.ini, scans/)
+    scanner_url: str = "http://127.0.0.1:8765"  # the scanner's local server, when it is running
+    scanner_src: str = ""              # TranscriptExtract folder (setup explanations); found from scanner_dir if empty
     eod_hourly_dir: str = ""           # path to a market_data_hourly folder (optional)
     eod_exchanges: list[str] = ["NSE"]
 

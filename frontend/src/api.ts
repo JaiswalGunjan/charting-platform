@@ -108,6 +108,74 @@ export interface PatternScan {
   levels: PatternLevel[];
 }
 
+export interface ScannerSignal {
+  date: string;
+  symbol: string;        // "NSE:MARICO"
+  ticker: string;
+  setup: string;         // scanner setup code (BBR, PP, VCP, ...)
+  setup_name: string;    // "Bad break recovery"
+  entry: number | null;  // the scanner's entry = signal-day close
+  risk: number | null;   // entry - stop, per share
+  buy: boolean;          // valid and "would buy"
+  pattern: string;       // matching chart pattern id, "" if none
+  valid: boolean;
+  status: string;        // "would buy", ...
+  rank: number | null;
+  close: number | null;
+  stop: number | null;
+  stop_pct: number | null;
+  score: number | null;
+  stage: number | null;
+  phase: string;
+  base_len: number | null;
+  shares: number | null;
+  value: number | null;
+  notes: string;
+  reject: string;
+  weak: string;
+  stop_note: string;
+  chart_href: string;
+}
+
+export interface ScannerScanInfo {
+  id: string;
+  market: string;
+  date: string;
+  valid: number | null;
+  near: number | null;
+  regime: string | null;
+}
+
+export interface ScannerStatus {
+  configured: boolean;
+  online: boolean;
+  msg?: string;
+  dir?: string;
+  markets?: { market: string; ok: boolean; last: string | null; dates: string[] }[];
+  scans: ScannerScanInfo[];
+}
+
+export interface ScannerScan {
+  id: string;
+  market: string;
+  date: string;
+  regime: string | null;
+  risk_mult: number | null;
+  report_href: string;
+  signals: ScannerSignal[];
+  near_misses: ScannerSignal[];
+  setups: Record<string, { name: string; what: string; why: string }>;
+}
+
+export interface ScannerJob {
+  state: "idle" | "running" | "done" | "error";
+  market: string;
+  date: string;
+  ok: boolean | null;
+  log: string[];
+  next: number;
+}
+
 export interface Health {
   status: string;
   data_source: string;
@@ -252,6 +320,11 @@ export const api = {
     req<PatternScan>(`/patterns/scan?${qs({ symbol, tf, ids: ids.join(","), limit })}`),
   patternCounts: (symbol: string, tf: string, limit: number) =>
     req<{ counts: Record<string, number>; bars: number }>(`/patterns/counts?${qs({ symbol, tf, limit })}`),
+  scanner: () => req<ScannerStatus>("/scanner"),
+  scannerScan: (id: string) => req<ScannerScan>(`/scanner/scans/${encodeURIComponent(id)}`),
+  scannerRun: (market: string, date?: string) =>
+    req<{ ok: boolean; msg: string }>("/scanner/run", { method: "POST", body: JSON.stringify({ market, date }) }),
+  scannerJob: (since: number) => req<ScannerJob>(`/scanner/job?since=${since}`),
   customIndicators: () => req<CustomOut[]>("/custom-indicators"),
   checkCustom: (d: CustomDef) =>
     req<{ ok: boolean; warmup: number }>("/custom-indicators/check", { method: "POST", body: JSON.stringify(d) }),

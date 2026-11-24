@@ -15,7 +15,7 @@ import {
   type UTCTimestamp,
 } from "lightweight-charts";
 import { createSeriesMarkers, type ISeriesMarkersPluginApi, type SeriesMarker, type Time } from "lightweight-charts";
-import { api, type Alert, type IndicatorMeta, type KeyLevel, type LiveBar, type PatternMarker, type PatternScan } from "./api";
+import { api, type Alert, type IndicatorMeta, type KeyLevel, type LiveBar, type PatternMarker, type PatternScan, type ScannerSignal } from "./api";
 import { DrawingsPrimitive, Mapper, type Drawing } from "./drawings";
 import { live } from "./live";
 import { indicatorLabel, plotStyle, type ActiveIndicator } from "./indicatorStyle";
@@ -23,38 +23,16 @@ import { rangeStart, type RangeId } from "./ranges";
 import { CHART_THEME, type Theme } from "./theme";
 import DrawingTools from "./DrawingTools";
 import { fmt, fmtVol } from "./format";
+import { exchangeTimeZone, shiftFor } from "./time";
 
 export { fmt, fmtVol };
 
-// Lightweight Charts renders UTC; shift epoch seconds so axis labels read in exchange time:
-// IST for NSE/BSE, New York (DST-aware) for US intraday bars. Daily+ bars are stamped at IST
-// midnight of their trading date, so they always shift by IST.
-const IST = 19800;
-const US = new Set(["NASDAQ", "NYSE"]);
-const nyParts = new Intl.DateTimeFormat("en-US", {
-  timeZone: "America/New_York", hourCycle: "h23", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit",
-});
-const nyCache = new Map<number, number>();
-function nyOffset(t: number): number {
-  const day = Math.floor(t / 86400);
-  let off = nyCache.get(day);
-  if (off === undefined) {
-    const noon = day * 86400 + 43200;
-    const p = Object.fromEntries(nyParts.formatToParts(new Date(noon * 1000)).map((x) => [x.type, x.value]));
-    off = Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour, +p.minute) / 1000 - noon;
-    nyCache.set(day, off);
-  }
-  return off;
-}
-const DAILY = new Set(["1D", "1W", "1M", "1Y"]);
-let shiftFor: (t: number) => number = () => IST;
-const toChart = (t: number) => (t + shiftFor(t)) as UTCTimestamp;
+let shift: (t: number) => number = shiftFor("NSE:X", "1D");
+const toChart = (t: number) => (t + shift(t)) as UTCTimestamp;
 function setShift(symbol: string, tf: string) {
-  shiftFor = exchangeTimeZone(symbol, tf) === "New York" ? nyOffset : () => IST;
+  shift = shiftFor(symbol, tf);
 }
-export function exchangeTimeZone(symbol: string, tf: string): "IST" | "New York" {
-  return US.has(symbol.split(":")[0]) && !DAILY.has(tf) ? "New York" : "IST";
-}
+export { exchangeTimeZone };
 const PAGE = 500;
 const RANGE_PAGE = 5000;
 const MAX_IND_BARS = 5000;
@@ -80,6 +58,7 @@ interface Props {
   onEditIndicator: (key: string) => void;
   onToggleIndicator: (key: string) => void;
   patterns: string[];                                   // enabled chart-pattern ids
+  signal?: ScannerSignal | null;                        // a SwingScanner signal opened from the Scanner tab
   onPatternCounts?: (counts: Record<string, number>) => void;
   wantPatternCounts?: boolean;                          // pattern menu open: count every pattern, shown or not
 }
@@ -476,6 +455,27 @@ export default function Chart(props: Props) {
     return at === null ? [] : ms.filter((m) => toChart(m.t) === at);
   })();
 
+  // ---- scanner signal: its stop and the signal-day close ---------------------------
+  const sig = props.signal;
+  useEffect(() => {
+    if (!sig || !apiObjs) return;
+    const series = apiObjs.series;
+    const lines: IPriceLine[] = [];
+    if (sig.stop != null) {
+      lines.push(series.createPriceLine({
+        price: sig.stop, color: "#e5484d", lineStyle: LineStyle.Dashed, lineWidth: 1, axisLabelVisible: true,
+        title: `SL${sig.stop_pct != null ? ` -${sig.stop_pct.toFixed(1)}%` : ""}`,
+      }));
+    }
+    if (sig.entry != null) {
+      lines.push(series.createPriceLine({
+        price: sig.entry, color: "#2f6bf2", lineStyle: LineStyle.Dotted, lineWidth: 1, axisLabelVisible: true,
+        title: `Entry ${sig.setup}`,
+      }));
+    }
+    return () => lines.forEach((l) => series.removePriceLine(l));
+  }, [sig, apiObjs]);
+
   // ---- price lines: alerts + AI key levels ------------------------------------
   useEffect(() => {
     const s = candles.current!;
@@ -516,6 +516,18 @@ export default function Chart(props: Props) {
           )}
           {status && <span className="muted">{status}</span>}
         </div>
+        {sig && (
+          <div className="legend-row pattern-hit scanner-hit" title={[sig.notes, sig.stop_note].filter(Boolean).join("\n\n")}>
+            <span className="pattern-tag scanner-tag">SCAN</span>
+            <span>
+              <b>{sig.setup_name || sig.setup}</b> {sig.date} · {sig.valid ? sig.status : `near miss: ${(sig.reject || sig.weak).split(";")[0]}`}
+              {sig.entry != null && <> · entry {fmt(sig.entry)}</>}
+              {sig.stop != null && <> · SL {fmt(sig.stop)}{sig.stop_pct != null && ` (-${sig.stop_pct.toFixed(1)}%)`}</>}
+              {sig.buy && sig.shares != null && <> · qty {sig.shares}</>}
+              {sig.score != null && <> · score {sig.score.toFixed(1)}</>}
+            </span>
+          </div>
+        )}
         {hoverHits.map((m, k) => (
           <div className="legend-row pattern-hit" key={k} title={m.rules.join(", ")}>
             <span className="pattern-tag" style={{ background: m.color }}>{m.text}</span>

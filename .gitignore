@@ -22,3 +22,10 @@ backend/data/
 node_modules/
 frontend/dist/
 *.tsbuildinfo
+
+# test output
+frontend/test-results/
+frontend/playwright-report/
+
+# reference screenshots (TradingView UI; not ours to publish)
+TradingViewSampleSnapshot*.JPG

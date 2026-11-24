@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { api, type Alert, type CustomDef, type ExplainResult, type Health, type IndicatorMeta, type PatternMeta, type Quote } from "./api";
+import { api, type Alert, type CustomDef, type ExplainResult, type Health, type IndicatorMeta, type PatternMeta, type Quote, type ScannerSignal } from "./api";
 import { live, type ConnState } from "./live";
 import Chart, { exchangeTimeZone, fmt, type RangeRequest } from "./Chart";
 import SymbolSearch from "./SymbolSearch";
@@ -7,6 +7,7 @@ import { AiPanel, AlertsPanel, WatchlistPanel } from "./Panels";
 import { newIndicator, type ActiveIndicator } from "./indicatorStyle";
 import { CustomEditor, IndicatorPicker, IndicatorSettings } from "./IndicatorDialogs";
 import AlertDialog from "./AlertDialog";
+import ScannerPanel from "./ScannerPanel";
 import PatternMenu, { DEFAULT_PATTERNS } from "./PatternMenu";
 import { RANGES, timeframeForRange, type RangeId } from "./ranges";
 import { useTheme, type Theme } from "./theme";
@@ -52,7 +53,7 @@ export default function App() {
   const [indicators, setIndicators] = usePersisted<ActiveIndicator[]>("indicators", []);
   const [metas, setMetas] = useState<Record<string, IndicatorMeta>>({});
   const [alerts, setAlerts] = useState<Alert[]>([]);
-  const [tab, setTab] = usePersisted<"watchlist" | "alerts" | "ai">("tab", "watchlist");
+  const [tab, setTab] = usePersisted<"watchlist" | "alerts" | "scanner" | "ai">("tab", "watchlist");
   const [ai, setAi] = useState<ExplainResult | null>(null);
   const [quote, setQuote] = useState<Quote | null>(null);
   const [conn, setConn] = useState<ConnState>("connecting");
@@ -60,6 +61,14 @@ export default function App() {
   const [menu, setMenu] = useState<"tf" | "patterns" | null>(null);
   const [patterns, setPatterns] = usePersisted<string[]>("patterns", DEFAULT_PATTERNS);
   const [patternMetas, setPatternMetas] = useState<PatternMeta[]>([]);
+  const [scanSignal, setScanSignal] = useState<ScannerSignal | null>(null);
+  const openSignal = (sig: ScannerSignal) => {
+    setScanSignal(sig);
+    setSymbol(sig.symbol);
+    setTf("1D");                                   // the scanner works on daily bars
+    setRange(null);
+    if (sig.pattern) setPatterns((ps) => (ps.includes(sig.pattern) ? ps : [...ps, sig.pattern]));
+  };
   const [patternCounts, setPatternCounts] = useState<Record<string, number>>({});
   useEffect(() => setPatternCounts({}), [symbol, tf]); // counts belong to one chart
   const [dialog, setDialog] = useState<Dialog | null>(null);
@@ -230,6 +239,7 @@ export default function App() {
             onRemoveIndicator={(k) => setIndicators((xs) => xs.filter((x) => x.key !== k))}
             onEditIndicator={(key) => setDialog({ kind: "settings", key })}
             patterns={patterns}
+            signal={scanSignal?.symbol === symbol ? scanSignal : null}
             onPatternCounts={setPatternCounts}
             wantPatternCounts={menu === "patterns"}
             onToggleIndicator={(k) => setIndicators((xs) => xs.map((x) => (x.key === k ? { ...x, hidden: !x.hidden } : x)))}
@@ -249,11 +259,13 @@ export default function App() {
             <button className={tab === "alerts" ? "active" : ""} onClick={() => setTab("alerts")}>
               Alerts{alerts.some((a) => a.status === "active") ? ` (${alerts.filter((a) => a.status === "active").length})` : ""}
             </button>
+            <button className={tab === "scanner" ? "active" : ""} onClick={() => setTab("scanner")}>Scanner</button>
             <button className={tab === "ai" ? "active" : ""} onClick={() => setTab("ai")}>AI</button>
           </nav>
           <div className="tab-body">
             {tab === "watchlist" && <WatchlistPanel current={symbol} onPick={setSymbol} />}
             {tab === "alerts" && <AlertsPanel symbol={symbol} lastPrice={quote?.ltp ?? null} alerts={alerts} reload={reloadAlerts} />}
+            {tab === "scanner" && <ScannerPanel selected={scanSignal} onPick={openSignal} />}
             {tab === "ai" && <AiPanel symbol={symbol} tf={tf} result={ai} setResult={setAi} />}
           </div>
         </aside>
