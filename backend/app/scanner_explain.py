@@ -66,7 +66,7 @@ def position(equity: float, entry: float, stop: float, risk_pct: float = 1.0, ri
         return 0, "invalid stop"
     n = math.floor(equity * risk_pct / 100 * risk_mult * size_mult / risk)
     cap = math.floor(equity * max_alloc_pct / 100 / entry)
-    return (cap, f"max {max_alloc_pct:g}% of equity") if n > cap else (max(n, 0), "risk")
+    return (cap, f"max {max_alloc_pct:g}% of the portfolio") if n > cap else (max(n, 0), "risk")
 
 
 def _f(v) -> float | None:
@@ -82,9 +82,11 @@ def _short(text: str, n: int = 150) -> str:
     return text if len(text) <= n else text[: n - 1].rsplit(" ", 1)[0] + "…"
 
 
-def explain(row: dict, market: str, setup: dict, rules: dict[str, str], meta: dict, equity: float | None = None) -> dict:
+def explain(row: dict, market: str, setup: dict, rules: dict[str, str], meta: dict, equity: float | None = None,
+            risk_pct: float | None = None) -> dict:
     """row = one raw CSV row of signals.csv / near_misses.csv; setup = {name, what, why}; meta = market.json;
-    equity = the user's equity (position size recomputed with the scanner's rule), else the scan's capital."""
+    equity = the user's portfolio size (position size recomputed with the scanner's rule), else the scan's capital;
+    risk_pct = the user's risk per trade in % of the portfolio, else the scan's setting (default 1%)."""
     cur = "$" if market in US else "₹"
     money = lambda x: f"{cur}{x:,.2f}"  # noqa: E731
     entry, stop = _f(row.get("close")), _f(row.get("stop"))
@@ -141,21 +143,22 @@ def explain(row: dict, market: str, setup: dict, rules: dict[str, str], meta: di
     mr = meta.get("market_row") or {}
     cfg = meta.get("config") or {}
     cap = equity if equity else _f(meta.get("capital"))
-    risk_pct = _f(cfg.get("risk_pct"))
-    risk_pct = 1.0 if risk_pct is None else risk_pct
+    if risk_pct is None:
+        risk_pct = _f(cfg.get("risk_pct"))
+        risk_pct = 1.0 if risk_pct is None else risk_pct
     mult = _f(mr.get("risk_mult"))
     mult = 1.0 if mult is None else mult
     size_mult = _f(row.get("size_mult")) or 1.0
     lines = []
     if cap:
         at_risk = cap * risk_pct / 100 * mult * size_mult
-        lines.append(f"Equity {money(cap)}, risk {risk_pct:g}% per trade x market multiplier {mult:g}"
+        lines.append(f"Portfolio size {money(cap)}, risk {risk_pct:g}% per trade x market multiplier {mult:g}"
                      + (f" x setup multiplier {size_mult:g}" if size_mult != 1 else "") + f" = {money(at_risk)} at risk.")
     if valid and cap and one_r and one_r > 0:
         shares, by = position(cap, entry, stop, risk_pct, mult, size_mult, _f(cfg.get("max_alloc_pct")) or 45.0)
         value = shares * entry
         lines.append(f"Shares = risk / (entry - stop) = {shares:,}; position {money(value)} "
-                     f"({value / cap * 100:.1f}% of equity), sized by {by}; a stop-out loses about {money(shares * one_r)}.")
+                     f"({value / cap * 100:.1f}% of the portfolio), sized by {by}; a stop-out loses about {money(shares * one_r)}.")
     elif not valid:
         lines.append("No position: the signal failed a hard rule, so the scanner would not buy it.")
     lines.append("Daily signals are bought at the close of the signal day; the stop is first tested the next session.")

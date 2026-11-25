@@ -13,6 +13,7 @@ import configparser
 import csv
 import json
 import math
+import os
 import re
 import urllib.error
 import urllib.request
@@ -21,7 +22,11 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
+from sqlalchemy import select
+
+from app.api.deps import SessionDep
 from app.config import get_settings
+from app.models import Symbol
 
 router = APIRouter(prefix="/scanner", tags=["scanner"])
 SCAN_ID = re.compile(r"^(NSE|BSE|NYSE|NASDAQ)_daily_(\d{4}-\d{2}-\d{2})$")
@@ -94,6 +99,38 @@ def scans_dir(root: Path) -> Path:
     return p if p.is_absolute() else (root / p).resolve()
 
 
+STUB_BYTES = 20_000        # a per-symbol file smaller than this holds only a few bars (the scanner's own threshold)
+NO_BARS_HINT = ("The scanner found no usable history. Usually the market's per-symbol folder ({folder}) holds only "
+                "stubs of a few recent bars (left by the downloader's incremental update); SwingScanner.exe of "
+                "18 Nov 2026 then has nothing to scan. Rebuild the scanner bundle from its current source (which "
+                "falls back to the day files), or clear '{key}' in swingbt_config.ini, or re-download full history.")
+
+
+def data_warnings(root: Path) -> dict[str, dict]:
+    """Per market: the per-symbol folder named in the scanner's ini ([data] <market>_symbols) when every sampled file
+    in it is a stub. Read only."""
+    ini = configparser.ConfigParser()
+    ini.read(root / "swingbt_config.ini", encoding="utf-8")
+    out = {}
+    for market in ("NSE", "BSE", "NYSE", "NASDAQ"):
+        key = f"{market.lower()}_symbols"
+        raw = ini.get("data", key, fallback="").strip()
+        if not raw:
+            continue
+        folder = Path(raw) if Path(raw).is_absolute() else (root / raw)
+        try:
+            sizes = [e.stat().st_size for _, e in zip(range(300), (e for e in os.scandir(folder)
+                                                                    if e.name.lower().endswith(".csv")))]
+        except OSError:
+            continue
+        if sizes and max(sizes) < STUB_BYTES:
+            out[market] = dict(folder=str(folder), key=key, msg=(
+                f"{market}: the per-symbol files in {folder} hold only a few bars each (largest "
+                f"{max(sizes):,} bytes of {len(sizes)} checked), so a scan of {market} fails with 'no symbol "
+                f"produced bars'."))
+    return out
+
+
 def _num(v: str):
     try:
         x = float(v)
@@ -164,14 +201,16 @@ def status() -> dict:
         return dict(configured=False, online=False, scans=[],
                     msg="Set SCANNER_DIR in .env to the SwingScanner folder (the one with SwingScanner.exe).")
     st = _server("/api/launcher/settings")
-    markets = [dict(market=m.get("market"), ok=bool(m.get("ok")), last=m.get("last"), dates=(m.get("dates") or [])[:60])
+    warn = data_warnings(root)
+    markets = [dict(market=m.get("market"), ok=bool(m.get("ok")), last=m.get("last"), dates=(m.get("dates") or [])[:60],
+                    warning=warn.get(m.get("market"), {}).get("msg"))
                for m in (st or {}).get("markets", [])]
     return dict(configured=True, dir=str(root), url=get_settings().scanner_url, online=st is not None,
                 markets=markets, scans=_list(scans_dir(root)))
 
 
 @router.get("/scans/{scan_id}")
-def get_scan(scan_id: str, near: bool = Query(True)) -> dict:
+def get_scan(scan_id: str, session: SessionDep, near: bool = Query(True)) -> dict:
     root = scanner_dir()
     m = SCAN_ID.match(scan_id)
     if root is None or not m:
@@ -189,16 +228,20 @@ def get_scan(scan_id: str, near: bool = Query(True)) -> dict:
     signals.sort(key=lambda r: (r["rank"] is None, r["rank"] or 0, -(r["score"] or 0)))
     misses = _rows(folder / "near_misses.csv", market) if near else []
     misses.sort(key=lambda r: -(r["score"] or 0))
-    url = get_settings().scanner_url.rstrip("/")
     info = setup_info(root)
+    # company names from our symbol list (the scan files only carry tickers)
+    tickers = {r["ticker"] for r in signals + misses}
+    names = dict(session.execute(select(Symbol.ticker, Symbol.name).where(
+        Symbol.exchange == market, Symbol.ticker.in_(tickers))).all()) if tickers else {}
     for r in signals + misses:
-        r["chart_href"] = f"{url}/{scan_id}/{r['chart']}" if r["chart"] else ""
+        r["name"] = names.get(r["ticker"]) or ""
+        r["chart_href"] = f"/scanner/report/{scan_id}/{r['chart']}" if r["chart"] else ""
         r["setup_name"] = info.get(r["setup"], {}).get("name", r["setup"])
     present = sorted({r["setup"] for r in signals + misses})
     setups = {c: info.get(c, dict(name=c, what="", why="")) for c in present}
     mr = meta.get("market_row") or {}
     return dict(id=scan_id, market=market, date=m.group(2), regime=mr.get("regime"), risk_mult=mr.get("risk_mult"),
-                rules=meta.get("rules"), symbols=meta.get("symbols"), report_href=f"{url}/{scan_id}/index.html",
+                rules=meta.get("rules"), symbols=meta.get("symbols"), report_href=f"/scanner/report/{scan_id}/index.html",
                 capital=meta.get("capital"), risk_pct=(meta.get("config") or {}).get("risk_pct", 1.0),
                 max_alloc_pct=(meta.get("config") or {}).get("max_alloc_pct", 45.0),
                 signals=signals, near_misses=misses, setups=setups)
@@ -252,13 +295,21 @@ def job(since: int = 0) -> dict:
     r = _server(f"/api/launcher/job?since={since}")
     if r is None:
         raise HTTPException(503, "The scanner is not running.")
+    log = r.get("log") or []
+    if r.get("state") == "error" and any("no symbol produced bars" in str(x) for x in log[-3:]):
+        root = scanner_dir()
+        w = data_warnings(root).get(str(r.get("market", "")).upper()) if root else None
+        r["hint"] = NO_BARS_HINT.format(folder=w["folder"] if w else "alpaca_adjusted",
+                                        key=w["key"] if w else f"{str(r.get('market', 'nyse')).lower()}_symbols")
     return r
 
 
 @router.get("/scans/{scan_id}/explain")
 def explain_signal(scan_id: str, symbol: str = Query(..., description="ticker, e.g. MARICO (or NSE:MARICO)"),
                    setup: str = Query(...), near: bool = Query(False),
-                   equity: float | None = Query(None, gt=0, description="your equity; default: the scan's capital")) -> dict:
+                   equity: float | None = Query(None, gt=0, description="your portfolio size; default: the scan's capital"),
+                   risk_pct: float | None = Query(None, gt=0, le=100,
+                                                  description="risk per trade, % of the portfolio; default: the scan's")) -> dict:
     """A brief 'why this trade' for one signal (or near miss) of a saved scan."""
     from app.scanner_explain import explain, load_meta, rulebook
 
@@ -277,4 +328,4 @@ def explain_signal(scan_id: str, symbol: str = Query(..., description="ticker, e
     if row is None:
         raise HTTPException(404, f"{ticker} {setup} is not in {scan_id}")
     info = setup_info(root).get(setup, dict(name=setup, what="", why=""))
-    return explain(row, m.group(1), info, rulebook(root), load_meta(folder), equity)
+    return explain(row, m.group(1), info, rulebook(root), load_meta(folder), equity, risk_pct)

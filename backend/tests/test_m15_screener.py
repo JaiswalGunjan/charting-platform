@@ -112,5 +112,16 @@ def test_cli_screen(session_factory, screens, monkeypatch, capsys):
     monkeypatch.setattr(cli, "init_db", lambda: None)
     cli.main(["screen", "--exchanges", "NSE", "--tf", "1D,1W"])
     out = capsys.readouterr().out
-    assert "NSE 1D:" in out and "NSE 1W:" in out
+    assert "NSE 1D 20" in out and "NSE 1W 20" in out                         # each line names its session
     assert sc.load_screen("NSE", "1D") and sc.load_screen("NSE", "1W")
+    latest = sc.load_screen("NSE", "1D")["session"]
+    # one past session, then a backfill that skips sessions already saved
+    past = sc.sessions(session_factory, "NSE", "2000-01-01")[3]
+    cli.main(["screen", "--exchanges", "NSE", "--tf", "1D", "--date", past])
+    assert sc.load_screen("NSE", "1D", day=past)["session"] == past
+    assert sc.load_screen("NSE", "1D")["session"] == latest                   # the default screen is still the newest
+    capsys.readouterr()
+    cli.main(["screen", "--exchanges", "NSE", "--tf", "1D", "--days", "8"])
+    out = capsys.readouterr().out
+    assert past not in out.split("sessions to screen")[1] and latest not in out.split("sessions to screen")[1]
+    assert set(sc.backfill_days(session_factory, "NSE", "1D", 8)) <= set(sc.screen_dates("NSE", "1D"))  # all saved

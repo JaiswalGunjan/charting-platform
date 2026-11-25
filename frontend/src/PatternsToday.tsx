@@ -17,9 +17,12 @@ function usePersisted<T>(key: string, init: T): [T, (v: T) => void] {
 }
 
 const US = new Set(["NASDAQ", "NYSE"]);
+const SCREEN_EXCHANGES = ["NSE", "NYSE", "NASDAQ"];
 const IST = 19800;
 const day = (t: number) =>
   new Date((t + IST) * 1000).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
+const niceDay = (d: string) =>
+  new Date(`${d}T00:00:00Z`).toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
 const stamp = (ts: number) =>
   new Date(ts * 1000).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
 
@@ -32,21 +35,21 @@ const COLS: { key: SortKey; label: string; title: string; first: 1 | -1 }[] = [
   { key: "patterns", label: "Patterns on the latest bar", title: "Sort by how many patterns formed", first: -1 },
 ];
 
-/** "Patterns formed today": the rulebook patterns that fired on the latest daily or weekly bar of every stock of an
- * exchange. Screens are run on request (or by `app.cli screen`) and saved; opening the page only reads them.
+/** Pattern Screener: the rulebook patterns that fired on the latest (or a chosen past) daily or weekly bar of every
+ * stock of an exchange. Screens are run on request (or by `app.cli screen`) and saved; opening the page only reads them.
  * Selecting several patterns shows the stocks that formed ALL of them on the same bar. */
 export default function PatternsToday(props: {
   metas: PatternMeta[];
   onOpen: (row: TodayRow, tf: string, patterns: string[]) => void;
-  onClose: () => void;
 }) {
-  const [exchanges, setExchanges] = useState<string[]>(["NSE"]);
+  const [exchanges, setExchanges] = useState<string[]>(SCREEN_EXCHANGES);
   const [exchange, setExchange] = usePersisted("today.exchange", "NSE");
   const [tf, setTf] = usePersisted<"1D" | "1W">("today.tf", "1D");
   const [selected, setSelected] = usePersisted<string[]>("today.patterns", []);
   const [minTurnover, setMinTurnover] = usePersisted<number>("today.minTurnover", 1);  // crore (India) / $M (US)
   const [sort, setSort] = usePersisted<Sort>("today.sort", { key: "patterns", dir: -1 });
   const [q, setQ] = useState("");
+  const [session, setSession] = useState("");            // "" = the newest saved screen
   const [screen, setScreen] = useState<Screen | null>(null);
   const [job, setJob] = useState<Screen["job"] | null>(null);
   const [error, setError] = useState("");
@@ -55,16 +58,21 @@ export default function PatternsToday(props: {
   const metas = props.metas.filter((m) => m.id !== "sr");
   const metaById = useMemo(() => Object.fromEntries(metas.map((m) => [m.id, m])), [metas]);
 
-  useEffect(() => { api.exchanges().then((xs) => setExchanges(xs.map((x) => x.exchange)), () => {}); }, []);
+  useEffect(() => {
+    api.exchanges().then((xs) => {
+      const have = SCREEN_EXCHANGES.filter((e) => xs.some((x) => x.exchange === e));
+      if (have.length) setExchanges(have);
+    }, () => {});
+  }, []);
 
   const load = () => {
     setError("");
-    api.patternsToday(exchange, tf).then((s) => {
+    api.patternsToday(exchange, tf, session).then((s) => {
       setScreen(s);
       if (s.job.state === "running") follow();
     }, (e) => setError(String(e.message ?? e)));
   };
-  useEffect(load, [exchange, tf]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(load, [exchange, tf, session]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => () => { if (poll.current) window.clearInterval(poll.current); }, []);
 
   const follow = () => {
@@ -86,7 +94,7 @@ export default function PatternsToday(props: {
   const run = async () => {
     setError("");
     try {
-      const r = await api.runPatternsToday(exchange, tf);
+      const r = await api.runPatternsToday(exchange, tf, session);
       setJob(r.job);
       follow();
     } catch (e) {
@@ -104,31 +112,54 @@ export default function PatternsToday(props: {
   const groups = [...new Set(metas.map((m) => m.group))];
   const toggle = (id: string) => setSelected(sel.has(id) ? selected.filter((x) => x !== id) : [...selected, id]);
   const running = job?.state === "running" || screen?.job.state === "running";
+  const dates = screen?.dates ?? [];
   const sortBy = (c: (typeof COLS)[number]) => setSort(nextSort(sort, c.key, c.first));
 
   return (
     <div className="today">
-      <div className="today-head">
-        <h2>Patterns formed today</h2>
-        <select value={exchange} onChange={(e) => setExchange(e.target.value)} aria-label="Exchange">
-          {exchanges.map((x) => <option key={x}>{x}</option>)}
-        </select>
-        <nav className="tabs inline">
-          {(["1D", "1W"] as const).map((t) => (
-            <button key={t} className={tf === t ? "active" : ""} onClick={() => setTf(t)}>{t === "1D" ? "Daily" : "Weekly"}</button>
-          ))}
-        </nav>
-        <span className="muted small today-asof">
-          {screen?.as_of ? <>Saved screen · {tf === "1D" ? "latest bar" : "week of"} <b>{day(screen.as_of)}</b>
-            {tf === "1W" && screen.last_session && <> (to {day(screen.last_session)}, week in progress)</>}
-            {" "}· {screen.scanned.toLocaleString()} stocks · screened {screen.generated_at ? stamp(screen.generated_at) : ""}</> : null}
-        </span>
+      <div className="today-head today-steps">
+        <label className="step">
+          <span className="step-n">1</span> Date
+          <input type="date" aria-label="Session date" value={session || dates[0] || ""}
+            min={dates[dates.length - 1]} max={dates[0]}
+            title="The session whose bar is screened; a weekend or holiday shows the session before it"
+            onChange={(e) => setSession(e.target.value === dates[0] ? "" : e.target.value)} />
+          <button className={`small${session ? "" : " active"}`} onClick={() => setSession("")}
+            title="The latest session">Latest</button>
+        </label>
+        <div className="step" role="group" aria-label="Exchange">
+          <span className="step-n">2</span> Exchange
+          <nav className="tabs inline seg">
+            {SCREEN_EXCHANGES.map((x) => (
+              <button key={x} className={exchange === x ? "active" : ""} onClick={() => setExchange(x)}
+                disabled={!exchanges.includes(x)} title={exchanges.includes(x) ? undefined : `No ${x} data imported`}>{x}</button>
+            ))}
+          </nav>
+        </div>
+        <div className="step" role="group" aria-label="Timeframe">
+          <span className="step-n">3</span> Timeframe
+          <nav className="tabs inline seg">
+            {(["1D", "1W"] as const).map((t) => (
+              <button key={t} className={tf === t ? "active" : ""} onClick={() => setTf(t)}>{t === "1D" ? "Daily" : "Weekly"}</button>
+            ))}
+          </nav>
+        </div>
         <span className="spacer" />
         <button className="small" disabled={running} onClick={run}
           title="Screen every stock again and save the result (about a minute). Opening this page never re-screens.">
-          {running ? "Screening…" : screen?.missing ? `Screen ${exchange} now` : "↻ Update screen"}
+          {running ? "Screening…" : screen?.missing ? `Screen ${exchange} now` : session ? `↻ Re-screen ${niceDay(screen?.session ?? session)}` : "↻ Update screen"}
         </button>
-        <button className="small" onClick={props.onClose} title="Back to the chart">✕ Close</button>
+      </div>
+      <div className="today-status">
+        <span className="muted small today-asof">
+          {screen?.as_of ? <>Saved screen · {tf === "1D" ? (session ? "bar of" : "latest bar") : "week of"} <b>{day(screen.as_of)}</b>
+            {tf === "1W" && screen.last_session && <> (to {day(screen.last_session)}{session ? "" : ", week in progress"})</>}
+            {" "}· {screen.scanned.toLocaleString()} stocks · screened {screen.generated_at ? stamp(screen.generated_at) : ""}</> : null}
+          {session && screen?.session && screen.session !== session && !screen.missing && (
+            <> · <b>{niceDay(session)}</b> was not a session: showing {niceDay(screen.session)}</>
+          )}
+          {dates.length > 0 && <> · {dates.length} saved session{dates.length === 1 ? "" : "s"}, {niceDay(dates[dates.length - 1])} – {niceDay(dates[0])}</>}
+        </span>
       </div>
       {running && job && <div className="hint today-progress">Screening {job.exchange} {job.tf === "1D" ? "daily" : "weekly"}: {job.msg}</div>}
       {job?.state === "error" && <div className="error">{job.msg}</div>}
@@ -136,7 +167,7 @@ export default function PatternsToday(props: {
 
       {screen?.missing && !running && (
         <div className="today-empty">
-          <p>{exchange} {tf === "1D" ? "daily" : "weekly"} has not been screened yet.</p>
+          <p>{exchange} {tf === "1D" ? "daily" : "weekly"}{session ? ` for ${niceDay(session)}` : ""} has not been screened yet.</p>
           <button className="primary" onClick={run}>Screen {exchange} now</button>
           <p className="muted small">The result is saved; this page shows it until you update it.
             You can also run <code>python -m app.cli screen</code> after each data import.</p>

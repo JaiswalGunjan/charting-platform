@@ -1,4 +1,4 @@
-import { API, expect, openApp, resetBackend, test } from "./fixtures";
+import { expect, openApp, resetBackend, test } from "./fixtures";
 
 test.beforeEach(async ({ request }) => resetBackend(request));
 
@@ -52,27 +52,4 @@ test("pattern menu search filters by name, marker text and group", async ({ page
   await search.fill("");
   await expect(items).toHaveCount(19);
   await expect(page.getByRole("button", { name: /◈ Patterns/ })).toContainText("1");
-});
-
-test("create an alert from the top bar (Alt+A)", async ({ page, request }) => {
-  await openApp(page);
-  await page.keyboard.press("Alt+a");
-  const dlg = page.locator(".modal.alert-dialog");
-  await expect(dlg).toContainText("Create alert on NSE:RELIANCE");
-  const price = dlg.locator("input[type=number]");
-  const before = Number(await price.inputValue());
-  await dlg.getByRole("button", { name: "+2%" }).click();
-  await expect.poll(async () => Number(await price.inputValue())).toBeCloseTo(before * 1.02, 1);
-  await dlg.getByRole("button", { name: "Create" }).click();
-  await expect(page.locator(".toast")).toContainText("Alert set");
-  await expect(page.locator(".tabs button", { hasText: "Alerts" })).toContainText("(1)");
-  const alerts = await (await request.get(`${API}/alerts`)).json();
-  expect(alerts).toHaveLength(1);
-  expect(alerts[0].condition.op).toBe("crosses_above");
-
-  // the Alert button opens the same dialog; an invalid price is refused
-  await page.getByRole("button", { name: /Alert$/ }).click();
-  await dlg.locator("input[type=number]").fill("0");
-  await dlg.getByRole("button", { name: "Create" }).click();
-  await expect(dlg.locator(".error")).toBeVisible();
 });

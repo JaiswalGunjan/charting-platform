@@ -15,7 +15,7 @@ class Settings(BaseSettings):
     )
 
     database_url: str = f"sqlite:///{(BACKEND_DIR / 'data' / 'charting.db').as_posix()}"
-    data_source: str = "synthetic"  # "synthetic" | "kite" | "eod" (local CSV history + simulated ticks)
+    data_source: str = "synthetic"  # "synthetic" | "kite" | "eod" (local CSV history)
 
     # local end-of-day CSVs (python -m app.cli import-eod)
     eod_dir: str = ""                  # path to a market_data_daily folder
@@ -35,6 +35,9 @@ class Settings(BaseSettings):
     redis_url: str = ""                 # e.g. redis://localhost:6379/0 ; empty = in-memory
     ws_throttle_ms: int = 250           # per-subscription conflation interval
     synthetic_tick_interval_ms: int = 500
+    # without a real feed (Kite), prices stay at the last real close unless this is on (random-walk ticks, a demo /
+    # test aid; off at the owner's request, 25 Nov 2026)
+    simulate_ticks: bool = False
 
     # AI analyst (Anthropic). Empty key = SDK default resolution (env var / `ant auth login`).
     anthropic_api_key: str = ""

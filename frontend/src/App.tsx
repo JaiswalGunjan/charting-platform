@@ -1,14 +1,13 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { api, type Alert, type CustomDef, type ExplainResult, type Health, type IndicatorMeta, type PatternMeta, type Quote, type ScannerSignal } from "./api";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { api, type Alert, type CustomDef, type Health, type IndicatorMeta, type KeyLevel, type PatternMeta, type Quote, type ScannerSignal } from "./api";
 import { live, type ConnState } from "./live";
 import Chart, { exchangeTimeZone, fmt, type RangeRequest } from "./Chart";
 import SymbolSearch from "./SymbolSearch";
-import { AiPanel, AlertsPanel, WatchlistPanel } from "./Panels";
+import { WatchlistPanel } from "./Panels";
 import { newIndicator, type ActiveIndicator } from "./indicatorStyle";
 import { CustomEditor, IndicatorPicker, IndicatorSettings, Modal } from "./IndicatorDialogs";
-import AlertDialog from "./AlertDialog";
-import ScannerPanel from "./ScannerPanel";
-import PatternsToday from "./PatternsToday";
+import Logo from "./Logo";
+import { positionSize } from "./sizing";
 import PatternMenu, { DEFAULT_PATTERNS } from "./PatternMenu";
 import { RANGES, timeframeForRange, type RangeId } from "./ranges";
 import { useTheme, type Theme } from "./theme";
@@ -42,9 +41,22 @@ interface Toast { id: number; text: string }
 type Dialog =
   | { kind: "picker" }
   | { kind: "about" }
-  | { kind: "alert" }
   | { kind: "settings"; key: string }
   | { kind: "custom"; id?: string; def?: CustomDef };
+
+const NO_LEVELS: KeyLevel[] = [];
+const NO_ALERTS: Alert[] = [];   // price alerts are off on the chart page (removed at the owner's request, 25 Nov 2026)
+
+/** A scanner signal sized with the portfolio and risk the Setup Screener saved (rupees for NSE/BSE, dollars for US). */
+function sizedSignal(scan: { market: string; risk_mult: number | null; max_alloc_pct: number }, s: ScannerSignal): ScannerSignal {
+  const us = scan.market === "NYSE" || scan.market === "NASDAQ";
+  const equity = Number(localStorage.getItem(us ? "scanner.equityUsd" : "scanner.equity")) || (us ? 100_000 : 1_000_000);
+  const riskPct = Number(localStorage.getItem("scanner.riskPct")) || 1;
+  if (!s.valid || s.entry == null || s.stop == null) return { ...s, shares: null, value: null };
+  const z = positionSize({ equity, entry: s.entry, stop: s.stop, riskPct, riskMult: scan.risk_mult ?? 1,
+    sizeMult: s.size_mult ?? 1, maxAllocPct: scan.max_alloc_pct ?? 45 });
+  return { ...s, shares: z.shares, value: z.value };
+}   // the chart still draws AI key levels if a caller passes them
 
 export default function App() {
   const [symbol, setSymbol] = usePersisted("symbol", "NSE:RELIANCE");
@@ -54,9 +66,6 @@ export default function App() {
   const [health, setHealth] = useState<Health | null>(null);
   const [indicators, setIndicators] = usePersisted<ActiveIndicator[]>("indicators", []);
   const [metas, setMetas] = useState<Record<string, IndicatorMeta>>({});
-  const [alerts, setAlerts] = useState<Alert[]>([]);
-  const [tab, setTab] = usePersisted<"watchlist" | "alerts" | "scanner" | "ai">("tab", "watchlist");
-  const [ai, setAi] = useState<ExplainResult | null>(null);
   const [quote, setQuote] = useState<Quote | null>(null);
   const [conn, setConn] = useState<ConnState>("connecting");
   const [toasts, setToasts] = useState<Toast[]>([]);
@@ -64,7 +73,36 @@ export default function App() {
   const [patterns, setPatterns] = usePersisted<string[]>("patterns", DEFAULT_PATTERNS);
   const [patternMetas, setPatternMetas] = useState<PatternMeta[]>([]);
   const [scanSignal, setScanSignal] = useState<ScannerSignal | null>(null);
-  const [view, setView] = usePersisted<"chart" | "today">("view", "chart");
+  // links that open a chart here:
+  //   Pattern Screener: /?symbol=NSE:TCS&tf=1D&patterns=pp,bbr
+  //   Setup Screener and the scanner report: /?scan=NSE_daily_...&symbol=MARICO&setup=BBR[&near=1]
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search);
+    const sym = q.get("symbol");
+    if (!sym) return;
+    window.history.replaceState(null, "", window.location.pathname);
+    const scanId = q.get("scan"), setup = q.get("setup");
+    if (scanId && setup) {
+      api.scannerScan(scanId).then((scan) => {
+        const list = q.get("near") === "1" ? [...scan.near_misses, ...scan.signals] : [...scan.signals, ...scan.near_misses];
+        const sig = list.find((r) => r.ticker === sym && r.setup === setup);
+        if (sig) openSignal(sizedSignal(scan, sig));
+        else toast(`${sym} ${setup} is not in the scan ${scanId}`);
+      }, (e) => toast(String(e.message ?? e)));
+      return;
+    }
+    setSymbol(sym);
+    if (q.get("tf")) setTf(q.get("tf")!);
+    setRange(null);
+    const pats = (q.get("patterns") ?? "").split(",").filter(Boolean);
+    if (pats.length) setPatterns((ps) => [...new Set([...ps, ...pats])]);
+    window.history.replaceState(null, "", window.location.pathname);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  const toast = (text: string) => {
+    const id = Date.now() + Math.random();
+    setToasts((t) => [...t, { id, text }]);
+    setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 6000);
+  };
   const openSignal = (sig: ScannerSignal) => {
     setScanSignal(sig);
     setSymbol(sig.symbol);
@@ -97,23 +135,14 @@ export default function App() {
     return offState;
   }, [reloadMetas, setIndicators]);
 
-  const reloadAlerts = useCallback(() => void api.alerts().then(setAlerts, () => {}), []);
-  useEffect(reloadAlerts, [reloadAlerts]);
-
-  // quotes for the open symbol + alert toasts
+  // quotes for the open symbol
   useEffect(() => {
     setQuote(null);
     return live.on((m) => {
       if (m.type === "quote" && m.symbol === symbol) setQuote(m);
       else if (m.type === "subscribed" && m.symbol === symbol) setQuote(m.quote);
-      else if (m.type === "alert") {
-        const id = Date.now() + Math.random();
-        setToasts((t) => [...t, { id, text: `🔔 ${m.message} @ ${fmt(m.price)}` }]);
-        setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 8000);
-        reloadAlerts();
-      }
     });
-  }, [symbol, reloadAlerts]);
+  }, [symbol]);
 
   useEffect(() => {
     const close = (e: MouseEvent) => !menuRef.current?.contains(e.target as Node) && setMenu(null);
@@ -121,21 +150,7 @@ export default function App() {
     return () => document.removeEventListener("mousedown", close);
   }, []);
 
-  useEffect(() => {
-    const k = (e: KeyboardEvent) => {
-      if (e.altKey && !e.ctrlKey && e.key.toLowerCase() === "a") {
-        e.preventDefault();
-        setDialog({ kind: "alert" });
-      }
-    };
-    window.addEventListener("keydown", k);
-    return () => window.removeEventListener("keydown", k);
-  }, []);
 
-  const aiLevels = useMemo(
-    () => (ai?.analysis && ai.symbol === symbol ? ai.analysis.key_levels : []),
-    [ai, symbol],
-  );
   const chg = quote?.change ?? 0;
   const hourlyOnly = health?.intraday_history === "1h";
 
@@ -163,7 +178,7 @@ export default function App() {
   return (
     <div className="app">
       <header className="topbar" ref={menuRef}>
-        <div className="brand">◆ Charting Lab</div>
+        <div className="brand"><Logo /> Charting Lab</div>
         <SymbolSearch value={symbol} onPick={setSymbol} />
         <div className="quote">
           <b>{fmt(quote?.ltp)}</b>
@@ -206,23 +221,19 @@ export default function App() {
             <PatternMenu metas={patternMetas} enabled={patterns} counts={patternCounts} onChange={setPatterns} />
           )}
         </div>
-        <button className={view === "today" ? "active" : ""} title="Patterns formed on the latest daily / weekly bar, all stocks"
-          onClick={() => setView(view === "today" ? "chart" : "today")}>▦ Patterns today</button>
-        <button title="Create alert (Alt+A)" onClick={() => setDialog({ kind: "alert" })}>
-          <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"
-            style={{ verticalAlign: "-3px", marginRight: 4 }}>
-            <circle cx="10" cy="11" r="6.5" /><path d="M10 7.5V11l2.5 1.5M3 4.5l2.5-2M17 4.5l-2.5-2" />
-          </svg>Alert
-        </button>
-        <button onClick={() => setTab("ai")}>✦ Explain</button>
+        <a className="toolbar-link" href="/?page=screener" target="_blank" rel="noopener"
+          title="Opens in a new tab: the patterns formed on a session's daily or weekly bar, every stock">▦ Pattern Screener ↗</a>
+        <a className="toolbar-link" href="/?page=setups" target="_blank" rel="noopener"
+          title="Opens in a new tab: the SwingScanner's buy signals by date and market, with entry, stop, quantity and why">▤ Setup Screener ↗</a>
         <div className="spacer" />
         <span
-          className={`conn ${conn}${health?.simulated_ticks ? " sim" : ""}`}
-          title={health?.simulated_ticks
-            ? "Ticks are simulated (random walk from the last real close) and never saved"
+          className={`conn ${conn}${health?.simulated_ticks ? " sim" : ""}${health?.ticks === "none" ? " eod" : ""}`}
+          title={health?.ticks === "none"
+            ? "No live feed: prices are the last close of your daily data (nothing is simulated)"
+            : health?.simulated_ticks ? "Ticks are simulated (random walk from the last real close) and never saved"
             : `live feed: ${conn}`}
         >
-          ● {conn !== "open" ? conn : health?.simulated_ticks ? "Simulated ticks" : "Live"}
+          ● {conn !== "open" ? conn : health?.ticks === "none" ? "Last close" : health?.simulated_ticks ? "Simulated ticks" : "Live"}
         </span>
         <button className="theme-toggle" title={theme === "dark" ? "Switch to day view" : "Switch to night view"}
           onClick={() => setThemeChoice(theme === "dark" ? "light" : "dark")}>
@@ -231,20 +242,7 @@ export default function App() {
       </header>
 
       <main className="main">
-        {view === "today" && (
-          <PatternsToday
-            metas={patternMetas}
-            onClose={() => setView("chart")}
-            onOpen={(row, t, pats) => {
-              setSymbol(row.symbol);
-              setTf(t);
-              setRange(null);
-              setPatterns((ps) => [...new Set([...ps, ...pats])]);
-              setView("chart");
-            }}
-          />
-        )}
-        <div className="chart-col" style={view === "today" ? { display: "none" } : undefined}>
+        <div className="chart-col">
           <Chart
             symbol={symbol}
             tf={tf}
@@ -252,8 +250,8 @@ export default function App() {
             range={range}
             indicators={indicators}
             metas={metas}
-            alerts={alerts}
-            aiLevels={aiLevels}
+            alerts={NO_ALERTS}
+            aiLevels={NO_LEVELS}
             onRemoveIndicator={(k) => setIndicators((xs) => xs.filter((x) => x.key !== k))}
             onEditIndicator={(key) => setDialog({ kind: "settings", key })}
             patterns={patterns}
@@ -272,19 +270,8 @@ export default function App() {
           </div>
         </div>
         <aside className="sidebar">
-          <nav className="tabs">
-            <button className={tab === "watchlist" ? "active" : ""} onClick={() => setTab("watchlist")}>Watchlist</button>
-            <button className={tab === "alerts" ? "active" : ""} onClick={() => setTab("alerts")}>
-              Alerts{alerts.some((a) => a.status === "active") ? ` (${alerts.filter((a) => a.status === "active").length})` : ""}
-            </button>
-            <button className={tab === "scanner" ? "active" : ""} onClick={() => setTab("scanner")}>Scanner</button>
-            <button className={tab === "ai" ? "active" : ""} onClick={() => setTab("ai")}>AI</button>
-          </nav>
           <div className="tab-body">
-            {tab === "watchlist" && <WatchlistPanel current={symbol} onPick={setSymbol} />}
-            {tab === "alerts" && <AlertsPanel symbol={symbol} lastPrice={quote?.ltp ?? null} alerts={alerts} reload={reloadAlerts} />}
-            {tab === "scanner" && <ScannerPanel selected={scanSignal} onPick={openSignal} />}
-            {tab === "ai" && <AiPanel symbol={symbol} tf={tf} result={ai} setResult={setAi} />}
+            <WatchlistPanel current={symbol} onPick={setSymbol} />
           </div>
         </aside>
       </main>
@@ -292,7 +279,7 @@ export default function App() {
       <footer className="footer">
         <span>
           {health?.data_source === "eod"
-            ? "History: local adjusted daily + hourly CSVs. Intraday ticks are simulated."
+            ? `History: local adjusted daily + hourly CSVs. ${health.ticks === "simulated" ? "Intraday ticks are simulated." : "Prices are the last close (no live feed)."}`
             : health?.data_source === "kite" ? "Data: Kite Connect (private use only)." : "Demo data — synthetic."}
           {" "}Not investment advice.
         </span>
@@ -314,20 +301,6 @@ export default function App() {
         </Modal>
       )}
 
-      {dialog?.kind === "alert" && (
-        <AlertDialog
-          symbol={symbol}
-          lastPrice={quote?.ltp ?? null}
-          onClose={() => setDialog(null)}
-          onCreated={(text) => {
-            setDialog(null);
-            reloadAlerts();
-            const id = Date.now() + Math.random();
-            setToasts((t) => [...t, { id, text }]);
-            setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 5000);
-          }}
-        />
-      )}
       {dialog?.kind === "picker" && (
         <IndicatorPicker
           metas={Object.values(metas)}

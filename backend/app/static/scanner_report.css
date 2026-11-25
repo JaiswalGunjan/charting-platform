@@ -1,0 +1,94 @@
+/* Charting Lab theme for the SwingScanner report (added by app/api/scanner_report.py; the report's files are not
+   changed). Flat panels, thin borders, the app's day / night palette. */
+html[data-theme] {
+  --bg: #f4f5f7; --card: #ffffff; --ink: #1d2230; --muted: #6b7385; --line: #e0e3ea;
+  --head1: #ffffff; --head2: #1d2230; --accent: #2f6bf2; --accent2: #2f6bf2;
+  --green: #089981; --green-bg: #08998118; --red: #e5484d; --red-bg: #e5484d18; --amber: #c77d00; --amber-bg: #c77d0018;
+  --grey-bg: #eef1f5; --blue-bg: #2f6bf218; --violet-bg: #7c4dff18; --hover: #f0f3fa; --violet: #6a3fd8; --blue: #2f6bf2;
+  color-scheme: light;
+}
+html[data-theme="dark"] {
+  --bg: #0b0e13; --card: #12161e; --ink: #d6dae3; --muted: #7d8597; --line: #252b38;
+  --head1: #12161e; --head2: #d6dae3; --accent: #4f8cff; --accent2: #4f8cff;
+  --green: #26a69a; --green-bg: #26a69a1f; --red: #ef5350; --red-bg: #ef53501f; --amber: #f0a43a; --amber-bg: #f0a43a1f;
+  --grey-bg: #1a202b; --blue-bg: #4f8cff1f; --violet-bg: #9575ff1f; --hover: #1a202b; --violet: #b39dff; --blue: #7aa7ff;
+  color-scheme: dark;
+}
+html[data-theme] body { background: var(--bg); color: var(--ink); font-family: Inter, "Segoe UI", system-ui, sans-serif;
+  font-size: 13px; }
+html[data-theme] a { color: var(--accent); }
+
+/* top bar: a flat panel like the app's toolbar */
+html[data-theme] header { background: var(--card) !important; color: var(--ink) !important; box-shadow: none !important;
+  border-bottom: 1px solid var(--line); padding: 8px 16px; }
+html[data-theme] header h1 { font-size: 15px; font-weight: 600; color: var(--ink); }
+html[data-theme] header .sub { color: var(--muted); opacity: 1; }
+html[data-theme] header a { color: var(--accent) !important; border-color: var(--line) !important; }
+html[data-theme] header button, html[data-theme] button.act, html[data-theme] button {
+  background: var(--card); color: var(--ink); border: 1px solid var(--line); border-radius: 4px; padding: 3px 10px;
+  font: inherit; font-size: 12px; cursor: pointer; }
+html[data-theme] header button:hover, html[data-theme] button.act:hover, html[data-theme] button:hover {
+  background: var(--hover); border-color: var(--line); }
+html[data-theme] button:disabled { opacity: .45; }
+html[data-theme] header button.act, html[data-theme] header button.act.watch-add { background: var(--accent);
+  border-color: var(--accent); color: #fff; }
+html[data-theme] header button.act.trade-enter, html[data-theme] button.trade-enter { color: var(--green);
+  border-color: var(--green); background: transparent; }
+html[data-theme] header button.act.trade-enter:hover { background: var(--green-bg); }
+html[data-theme] button.watch-add, html[data-theme] button.watch-add-form { color: var(--accent); border-color: var(--accent); }
+html[data-theme] button.trade-exit { color: var(--red); border-color: var(--red); }
+html[data-theme] input, html[data-theme] select, html[data-theme] textarea { background: var(--card); color: var(--ink);
+  border: 1px solid var(--line); border-radius: 4px; }
+
+/* page body */
+html[data-theme] main { padding: 12px 16px; }
+html[data-theme] .card { background: var(--card); border: 1px solid var(--line); border-radius: 6px; box-shadow: none;
+  padding: 10px 14px; margin-bottom: 12px; }
+html[data-theme] h2 { font-size: 13px; font-weight: 600; text-transform: none; letter-spacing: 0; color: var(--ink); }
+html[data-theme] .banner { background: var(--card); border: 1px solid var(--line); border-left: 3px solid var(--green);
+  border-radius: 6px; color: var(--ink); }
+html[data-theme] .banner.warn { border-left-color: var(--amber); }
+html[data-theme] .banner.stop { border-left-color: var(--red); }
+html[data-theme] .banner code { background: var(--grey-bg); }
+html[data-theme] .note, html[data-theme] footer { color: var(--muted); }
+html[data-theme] footer { border-top: 1px solid var(--line); }
+
+/* tables: dense, hairline rows, like a screener */
+html[data-theme] table { background: transparent; border-radius: 0; font-size: 12.5px; }
+html[data-theme] th { background: var(--card); color: var(--muted); font-weight: 500; font-size: 11.5px;
+  text-transform: none; letter-spacing: 0; border-bottom: 1px solid var(--line); }
+html[data-theme] td { border-bottom: 1px solid var(--line); color: var(--ink); }
+html[data-theme] tbody tr:hover td { background: var(--hover); }
+html[data-theme] td.num { font-variant-numeric: tabular-nums; }
+html[data-theme] .rank { color: var(--muted); font-weight: 600; }
+html[data-theme] .pos { color: var(--green); } html[data-theme] .neg { color: var(--red); }
+html[data-theme] .why { color: var(--amber); }
+
+/* badges, chips, meters */
+html[data-theme] .badge { border-radius: 4px; font-weight: 600; }
+html[data-theme] .badge.wait { background: var(--grey-bg); color: var(--muted); }
+html[data-theme] .chip { border-radius: 4px; }
+html[data-theme] .chip.base { background: var(--violet-bg); color: var(--violet); }
+html[data-theme] .chip.shaper { background: var(--blue-bg); color: var(--blue); }
+html[data-theme] .meter { background: var(--grey-bg); border-radius: 2px; height: 6px; }
+html[data-theme] .meter i { background: var(--accent); }
+
+/* chart pages: chart left, explanation right */
+html[data-theme] .wrap { background: var(--bg); }
+html[data-theme] #chartcol, html[data-theme] #legend, html[data-theme] #panel { background: var(--card); }
+html[data-theme] #legend { border-bottom: 1px solid var(--line); color: var(--ink); }
+html[data-theme] #readout { background: var(--card); border-top: 1px solid var(--line); color: var(--muted); }
+html[data-theme] #panel { border-left: 1px solid var(--line); color: var(--ink); }
+html[data-theme] #panel h3 { color: var(--ink); text-transform: none; letter-spacing: 0; font-size: 13px; font-weight: 600;
+  border-bottom: 1px solid var(--line); }
+html[data-theme] .sec { border-radius: 4px; }
+html[data-theme] .sec.reject { background: var(--red-bg); }
+html[data-theme] .sec.reject h3, html[data-theme] .sec.stop h3 { color: var(--red); border-color: var(--line); }
+html[data-theme] .sec.sell h3 { color: var(--green); border-color: var(--line); }
+html[data-theme] .sec.warn h3 { color: var(--amber); border-color: var(--line); }
+html[data-theme] .sec.size, html[data-theme] .glossary { background: var(--grey-bg); }
+html[data-theme] .glossary summary, html[data-theme] .glossary dt { color: var(--ink); }
+html[data-theme] .glossary dd { color: var(--muted); }
+
+/* theme switch added by the theme script */
+#cl-theme { margin-left: 8px; }

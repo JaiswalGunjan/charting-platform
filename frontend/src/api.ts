@@ -119,6 +119,7 @@ export interface ScannerSignal {
   risk: number | null;   // entry - stop, per share
   buy: boolean;          // valid and "would buy"
   size_mult: number | null;  // setup multiplier used in sizing
+  name?: string;             // company name from our symbol list ("" when unknown)
   pattern: string;       // matching chart pattern id, "" if none
   valid: boolean;
   status: string;        // "would buy", ...
@@ -153,7 +154,7 @@ export interface ScannerStatus {
   online: boolean;
   msg?: string;
   dir?: string;
-  markets?: { market: string; ok: boolean; last: string | null; dates: string[] }[];
+  markets?: { market: string; ok: boolean; last: string | null; dates: string[]; warning?: string | null }[];
   scans: ScannerScanInfo[];
 }
 
@@ -187,6 +188,7 @@ export interface ScannerJob {
   ok: boolean | null;
   log: string[];
   next: number;
+  hint?: string;          // a plain explanation of a known failure (e.g. US data that holds only stubs)
 }
 
 export interface TodayRow {
@@ -214,6 +216,8 @@ export interface ScreenJob {
 export interface PatternsToday {
   exchange: string;
   tf: string;
+  session?: string;           // trading date of the screened bar (YYYY-MM-DD)
+  dates: string[];            // sessions with a saved screen, newest first
   as_of: number | null;       // the latest bar (epoch s)
   last_session?: number;
   rows: TodayRow[];
@@ -229,6 +233,7 @@ export interface Health {
   data_source: string;
   live: boolean;
   simulated_ticks: boolean;
+  ticks?: "live" | "simulated" | "none";   // none = prices are the last close of the stored data
   intraday_history: "1m" | "1h";
 }
 
@@ -372,13 +377,14 @@ export const api = {
   scannerScan: (id: string) => req<ScannerScan>(`/scanner/scans/${encodeURIComponent(id)}`),
   scannerRun: (market: string, date?: string) =>
     req<{ ok: boolean; msg: string }>("/scanner/run", { method: "POST", body: JSON.stringify({ market, date }) }),
-  scannerExplain: (scanId: string, symbol: string, setup: string, near: boolean, equity?: number) =>
-    req<SignalExplanation>(`/scanner/scans/${encodeURIComponent(scanId)}/explain?${qs({ symbol, setup, near: near ? "true" : "false", equity })}`),
+  scannerExplain: (scanId: string, symbol: string, setup: string, near: boolean, equity?: number, riskPct?: number) =>
+    req<SignalExplanation>(`/scanner/scans/${encodeURIComponent(scanId)}/explain?${qs({ symbol, setup, near: near ? "true" : "false", equity, risk_pct: riskPct })}`),
   scannerJob: (since: number) => req<ScannerJob>(`/scanner/job?since=${since}`),
-  patternsToday: (exchange: string, tf: string) =>
-    req<PatternsToday>(`/screener/patterns-today?${qs({ exchange, tf })}`),
-  runPatternsToday: (exchange: string, tf: string) =>
-    req<{ ok: boolean; job: ScreenJob }>("/screener/patterns-today/run", { method: "POST", body: JSON.stringify({ exchange, tf }) }),
+  patternsToday: (exchange: string, tf: string, date?: string) =>
+    req<PatternsToday>(`/screener/patterns-today?${qs({ exchange, tf, date: date || undefined })}`),
+  runPatternsToday: (exchange: string, tf: string, date?: string) =>
+    req<{ ok: boolean; job: ScreenJob }>("/screener/patterns-today/run",
+      { method: "POST", body: JSON.stringify({ exchange, tf, date: date || null }) }),
   patternsTodayJob: () => req<ScreenJob>("/screener/patterns-today/job"),
   customIndicators: () => req<CustomOut[]>("/custom-indicators"),
   checkCustom: (d: CustomDef) =>

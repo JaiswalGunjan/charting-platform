@@ -37,7 +37,11 @@ through history, and live candles and quotes over WebSocket. It has 50 indicator
 picker, inputs and per-line colour/width/visibility) and custom formula indicators. A ☀ Day / ☾ Night
 button in the top bar switches the theme (day by default; the choice is remembered). The
 Lightweight Charts attribution the licence requires (notice + link to tradingview.com) is on the **About**
-page (footer link); the in-chart logo and footer credit are off.
+page (footer link), and the TradingView logo shows at the bottom left of the chart; the footer credit is off.
+Buttons at the bottom middle of the chart zoom in / out (keeping the latest bars) and move left / right; moving
+stops at the first bar and just after the latest bar.
+Without a live feed (Kite) prices are the last real close; `SIMULATE_TICKS=true` turns on random-walk demo
+ticks (the end-to-end tests use it).
 
 Drawing tools (left toolbar): trend line, ray, extended line, arrow, horizontal line/ray, vertical
 line, parallel channel, rectangle, Fibonacci retracement, brush, text and a measure tool. Use
@@ -58,9 +62,9 @@ un-tests.ps1 -SkipE2E # without the browser tests
 
 | Suite | Where | What it guards |
 |---|---|---|
-| Backend, pytest (224) | `backend/tests/` | data import (daily/hourly/names/CLI), every timeframe incl. US sessions and paging, all 50 indicators vs reference maths, formula language and its sandbox, live bars and WebSocket, alerts, watchlists, AI analyst (fake LLM), drawings API, chart patterns (parity with swingbt when present) |
-| Frontend unit, Vitest (65) | `frontend/tests/unit/` | date-range presets (incl. month-end clamping), time zones and DST, drawing geometry, time<->pixel mapping and hit-testing, indicator labels/styles, number formats |
-| Browser end-to-end, Playwright (19) | `frontend/tests/e2e/` | every user flow in a real browser: load, live ticks, symbol search, timeframe menu, ranges, theme, indicators and settings, custom formulas, drawing tools and saving, pattern menu and counts, alerts |
+| Backend, pytest (247) | `backend/tests/` | data import (daily/hourly/names/CLI), every timeframe incl. US sessions and paging, all 50 indicators vs reference maths, formula language and its sandbox, live bars and WebSocket, alerts, watchlists, AI analyst (fake LLM), drawings API, chart patterns (parity with swingbt when present) |
+| Frontend unit, Vitest (66) | `frontend/tests/unit/` | date-range presets (incl. month-end clamping), time zones and DST, drawing geometry, time<->pixel mapping and hit-testing, indicator labels/styles, number formats |
+| Browser end-to-end, Playwright (24) | `frontend/tests/e2e/` | every user flow in a real browser: load, live ticks, symbol search, timeframe menu, ranges, theme, indicators and settings, custom formulas, drawing tools and saving, pattern menu and counts, alerts |
 
 The end-to-end tests start their own backend on :8010 with a fresh, seeded synthetic database and a dev server
 on :5180, so your data and running servers are never touched. Locally they use the installed Microsoft Edge;
@@ -135,26 +139,48 @@ momentum pullback and quiet breakout. The rules are the owner's rulebook code, c
 `GET /patterns/scan?symbol&tf&ids&limit` returns markers, shapes (base, pivot, contractions, lines,
 coil box) and S/R levels. Only hits that pass the rule's hard checks are shown.
 
-## Patterns formed today (dashboard)
+## Pattern Screener (dashboard)
 
-**▦ Patterns today** in the top bar lists every stock of an exchange whose latest **daily** or **weekly** bar formed
-one of the rulebook patterns. Pick one pattern or several and match **any** of them or **all together**. You can
-also set a minimum 50-bar median turnover (₹ Cr / $M) and search. Clicking a stock opens its chart with those
-patterns switched on. Results are screened in one pass per exchange (bars read in batches; the rules run on the last
-bar only: NSE ~45 s daily, ~65 s weekly). They are saved in `backend/data/screens/` and refreshed with **Screen now**
-or `python -m app.cli screen --exchanges NSE --tf "1D,1W"`; schedule the command after the nightly import.
-Weekly = the current week so far. API: `GET /screener/patterns-today?exchange&tf`, `POST .../run`, `GET .../job`.
+**▦ Pattern Screener ↗** in the top bar opens the screener as its own page in a new tab (`/?page=screener`). Pick
+**1 Date** (calendar over the saved sessions; a weekend or holiday shows the session before it), **2 Exchange**
+(NSE, NYSE, NASDAQ) and **3 Timeframe** (daily or weekly); it lists every stock whose bar of that session formed
+one of the rulebook patterns. A stock opens in a Charting Lab tab (`/?symbol=NSE:TCS&tf=1D&patterns=pp`). Pick one
+pattern or several (a stock must have formed **all** of them), set a minimum 50-bar median turnover (₹ Cr / $M) and
+search. Clicking a stock opens its chart with those patterns switched on. Results are screened in one pass per exchange
+(bars read in batches; the rules run on the screened bar only: NSE ~45 s daily, ~65 s weekly). Each screen is saved in
+`backend/data/screens/` under its session date (`NSE_1D_2026-11-20.json`; `NSE_1D.json` = the newest) and refreshed
+with **Update screen** or:
+
+    python -m app.cli screen --exchanges NSE,NYSE,NASDAQ --tf "1D,1W"            # latest session
+    python -m app.cli screen --exchanges NSE --tf 1D --date 2026-11-20            # one past session
+    python -m app.cli screen --exchanges NSE,NYSE,NASDAQ --tf "1D,1W" --days 30   # backfill what is missing
+
+Schedule the first after the nightly import. Weekly = the week up to that session (one screen per week in a
+backfill). API: `GET /screener/patterns-today?exchange&tf[&date]` (with the saved `dates`), `POST .../run`
+(`{exchange, tf, date?}`), `GET .../job`.
 
 ## SwingScanner connection
 
-Set `SCANNER_DIR` in `.env` to the SwingScanner folder (the one with `SwingScanner.exe`). The sidebar's
-**Scanner** tab then lists its past scans (read from its `scans` folder, also while the scanner is closed). It shows
-the buy setups with entry (the signal day's close), SL and quantity, plus all signals and near misses (with the rule
-that failed). A guide explains each setup in the scan, using the scanner's own `explain.py` text read as data.
-Clicking a row opens the chart with Entry/SL lines and the setup's pattern switched on. While `SwingScanner.exe` is
-running (`SCANNER_URL`, default :8765), **Run scan** starts a new scan and shows its progress. The app never
-writes into the scanner's folders. API: `GET /scanner`, `/scanner/scans/{id}`, `/scanner/setups`,
-`/scanner/portfolio`, `POST /scanner/run`, `GET /scanner/job`.
+**▤ Setup Screener ↗** (next to the Pattern Screener in the top bar) opens the scanner view below as its own page in
+a new tab (`/?page=setups`); a signal there opens its chart in a Charting Lab tab.
+
+Set `SCANNER_DIR` in `.env` to the SwingScanner folder (the one with `SwingScanner.exe`). The **Setup
+Screener** page then shows its saved scans: pick **1 Date** (a calendar over the saved scans; a weekend or holiday
+shows the session before it) and **2 Market** (NSE / NYSE / NASDAQ). Scans are read from its `scans` folder, also
+while the scanner is closed; new scans are run in SwingScanner itself. It shows
+the buy signals with entry (the signal day's close), SL and a quantity sized for the portfolio you enter (NSE in ₹ lakh,
+default 10; NYSE/NASDAQ in dollars, default $100,000) and your risk per trade (default 1%), plus near misses (with the hard rule that failed). Each row shows the company name; the symbol is a link to its chart (Entry / SL lines, the setup's pattern on).
+Clicking a row opens its "why this trade" summary right under it (click again to close); it starts with the setup
+itself (the scanner's own `explain.py` text, read as data). A search box (symbol or company) and setup chips filter
+the table.
+Clicking a row opens the chart with Entry/SL lines and the setup's pattern switched on. (The API can still start a
+scan on a running `SwingScanner.exe`, `POST /scanner/run`; the panel has no run button. If a US market's per-symbol
+folder holds only stub files, `GET /scanner` flags it: SwingScanner.exe of 18 Nov 2026 then fails with 'no symbol
+produced bars'; its current source falls back to the day files, so rebuild the bundle.) **full report ↗** opens
+the scanner's HTML report restyled in the app's day/night theme (`/scanner/report/...`; its Watch / Enter trade /
+Refresh buttons are passed to the scanner's server). The app never writes into the scanner's folders. API:
+`GET /scanner`, `/scanner/scans/{id}`, `/scanner/scans/{id}/explain`, `/scanner/setups`, `/scanner/portfolio`,
+`POST /scanner/run`, `GET /scanner/job`, `GET|POST /scanner/report/...`.
 
 ## Custom indicators (formula language)
 

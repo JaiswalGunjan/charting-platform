@@ -1,39 +1,73 @@
+import type { Page } from "@playwright/test";
 import { expect, openApp, resetBackend, test } from "./fixtures";
 
 test.beforeEach(async ({ request }) => resetBackend(request));
 
-test("scanner tab: past scans, buy setups with entry / SL / qty, near misses, setup guide", async ({ page }) => {
+/** The Setup Screener page (/?page=setups); a signal clicked there opens its chart in one shared Charting Lab tab. */
+async function openSetups(page: Page) {
   await openApp(page, { symbol: "NSE:RELIANCE", tf: "1W", patterns: [] });
-  await page.locator(".tabs button", { hasText: "Scanner" }).click();
-  const panel = page.locator(".panel.scanner");
-  await expect(panel).toContainText("scanner offline");                   // the test scanner is not running
-  await expect(panel.locator(".field", { hasText: "Past scans (history)" }).locator("select"))
-    .toContainText("23 Nov 2026 · NSE · 1 signal");
-  await expect(panel).toContainText("market weak bear");
-  await expect(panel.getByRole("button", { name: "Run scan" })).toHaveCount(0); // only while the scanner runs
+  await page.goto("/?page=setups");
+  const panel = page.locator(".panel.scanner.page");
+  let chart: Page | null = null;
+  /** Click a row's symbol link; return the chart tab (opened by the first click, reused by the next ones). */
+  const openRow = async (row: ReturnType<Page["locator"]>) => {
+    const link = row.locator("a.scan-sym");
+    if (!chart) [chart] = await Promise.all([page.context().waitForEvent("page"), link.click()]);
+    else await link.click();
+    return chart!;
+  };
+  return { panel, openRow };
+}
 
-  // buy setups view (default): the trade plan of each buy
-  await expect(panel.locator(".scan-views button.active")).toContainText("Buy setups");
+test("setup screener: buy signals with entry / SL / qty, near misses, setup filter, why this trade", async ({ page }) => {
+  const { panel, openRow } = await openSetups(page);
+  await expect(panel).toContainText("scanner offline");                   // the test scanner is not running
+  await expect(panel.getByRole("group", { name: "Scan market" }).locator("button.active")).toHaveText("NSE");
+  await expect(panel.getByLabel("Scan date")).toHaveValue("2026-11-23");            // newest NSE scan first
+  await expect(panel).toContainText("market weak bear");
+  await expect(panel.getByRole("button", { name: "Run scan" })).toHaveCount(0);
+
+  // buy signals (default): the trade plan of each buy
+  await expect(panel.locator(".scan-views button.active")).toContainText("Buy signals");
   await expect(panel.locator(".scan-table thead")).toContainText("Entry");
   await expect(panel.locator(".scan-table thead")).toContainText("SL");
-  const sig = panel.locator(".scan-table tbody tr", { hasText: "TCS" });
+  const sig = panel.locator(".scan-table tbody tr:not(.why-row)", { hasText: "TCS" });
   await expect(sig).toContainText("would buy");
   await expect(sig).toContainText("2,400.00");                             // entry = signal-day close
   await expect(sig).toContainText("2,328.00");                             // stop loss
   await expect(sig).toContainText("-3.0%");
   await expect(sig).toContainText("69");          // quantity at Rs 10 L: floor(10,00,000 x 1% x 0.5 / 72)
-  await expect(panel.locator(".scan-views button")).toHaveText([/Buy setups/, /Near misses/]);   // no "All signals"
+  // score column, sorted by score, highest first (not by the scanner's rank)
+  await expect(panel.locator(".scan-table thead")).toContainText("Score");
+  await expect(panel.locator(".scan-table tbody tr .scan-score")).toHaveText(["9.95", "9.80"]);
+  await expect(panel.locator(".scan-table tbody tr:not(.why-row)").first()).toContainText("WIPRO");
+  await expect(panel.locator(".scan-views button")).toHaveText([/Buy signals/, /Near misses/]);
+  await expect(panel.getByRole("link", { name: "full report ↗" }))             // the report in our theme
+    .toHaveAttribute("href", /^\/api\/scanner\/report\/NSE_daily_\d{4}-\d{2}-\d{2}\/index\.html$/);
 
-  await sig.click();
-  await expect(sig).toHaveClass(/sel/);
-  await expect(page.locator(".legend-row").first()).toContainText("NSE:TCS");
-  await expect(page.locator(".tf-btn")).toContainText("D");                // scanner signals are daily
-  await expect(page.locator(".scanner-hit"))
+  // the symbol is a link to its chart (daily, Entry / SL, the setup's pattern on); it does not open the summary
+  await expect(sig.locator("a.scan-sym")).toHaveAttribute("href", "/?scan=NSE_daily_2026-11-23&symbol=TCS&setup=BBR");
+  const chart = await openRow(sig);
+  await expect(panel.locator(".why")).toHaveCount(0);
+  await expect(chart.locator(".legend-row").first()).toContainText("NSE:TCS");
+  await expect(chart.locator(".tf-btn")).toContainText("D");
+  await expect(chart.locator(".scanner-hit"))
     .toContainText("Bad break recovery 2026-11-23 · would buy · entry 2,400.00 · SL 2,328.00 (-3.0%) · qty 69");
-  await expect(page.getByRole("button", { name: /◈ Patterns/ })).toContainText("1"); // BBR pattern switched on
+  await expect(chart.getByRole("button", { name: /◈ Patterns/ })).toContainText("1"); // BBR switched on
 
-  // "why this trade": the six-part brief with the trade plan
+  // a row click opens the trade summary right under the row; a second click closes it
+  await sig.click();
+  await expect(sig).toHaveClass(/open/);
   const why = panel.locator(".why");
+  await expect(why).toContainText("Why this trade: TCS · BBR · 2026-11-23");
+  await expect(panel.locator(".scan-table tbody tr.why-row")).toHaveCount(1);
+  const below = await panel.locator(".scan-table tbody tr").evaluateAll((trs) =>
+    trs.findIndex((t) => t.classList.contains("why-row")) - trs.findIndex((t) => t.classList.contains("open")));
+  expect(below).toBe(1);                                                    // directly south of its row
+  await sig.click();
+  await expect(panel.locator(".why")).toHaveCount(0);
+  await expect(sig).not.toHaveClass(/open/);
+  await sig.click();
   await expect(why).toContainText("Why this trade: TCS · BBR · 2026-11-23");
   for (const title of ["What the pattern is: Bad break recovery", "Why today is the entry", "Where the stop is and why",
                        "How we would sell", "Position size", "Warnings and context"]) {
@@ -42,63 +76,199 @@ test("scanner tab: past scans, buy setups with entry / SL / qty, near misses, se
   await expect(why).toContainText("Stop ₹2,328.00 = 3.00% below the entry ₹2,400.00");
   await expect(why).toContainText("1R = ₹72.00");
   await expect(why).toContainText("+2R = ₹2,544.00");
-  await expect(why).toContainText("Equity ₹1,000,000.00");
+  await expect(why).toContainText("Portfolio size ₹1,000,000.00");
 
-  // a new equity re-sizes the table, the chart legend and the explanation
-  const eq = panel.getByLabel("Equity in lakh");
-  await expect(eq).toHaveValue("10");                                       // the box is in lakh: 10 = Rs 10,00,000
-  await expect(panel.locator(".field.equity")).not.toContainText("Your equity");          // no label text
-  await expect(panel.locator(".field.equity")).not.toContainText("= ₹");                 // no rupee echo
+  // the portfolio box (in lakh) re-sizes the table and the explanation
+  const eq = panel.getByLabel("Portfolio size in lakh");
+  await expect(eq).toHaveValue("10");
   await eq.fill("20");
   await expect(sig).toContainText("138");
-  await expect(page.locator(".scanner-hit")).toContainText("qty 138");
-  await expect(why).toContainText("Equity ₹2,000,000.00");
+  await expect(why).toContainText("Portfolio size ₹2,000,000.00");
   await expect(why).toContainText("Shares = risk / (entry - stop) = 138");
   await eq.fill("2.5");                                                     // fractions of a lakh work
   await expect(sig).toContainText("17");                                    // floor(2,50,000 x 1% x 0.5 / 72)
   await eq.fill("");                                                        // empty: no sizes, no error
-  await expect(sig.locator("td").last()).toHaveText("—");                    // no size without an equity
+  await expect(sig.locator("td").last()).toHaveText("—");
   await eq.fill("20");
-  await page.reload();                                                      // remembered (in rupees internally)
-  await page.locator(".tabs button", { hasText: "Scanner" }).click();
-  await expect(panel.getByLabel("Equity in lakh")).toHaveValue("20");
+  await page.reload();                                                      // remembered
+  await expect(panel.getByLabel("Portfolio size in lakh")).toHaveValue("20");
+  await openRow(panel.locator(".scan-table tbody tr:not(.why-row)", { hasText: "TCS" }));  // the chart sizes with it too
+  await expect(chart.locator(".scanner-hit")).toContainText("qty 138");
   await panel.getByRole("button", { name: "reset" }).click();
-  await expect(panel.getByLabel("Equity in lakh")).toHaveValue("10");
-  await panel.locator(".scan-table tbody tr", { hasText: "TCS" }).click();
+  await expect(panel.getByLabel("Portfolio size in lakh")).toHaveValue("10");
 
-  // the setup guide explains each setup in the scan
-  const guide = panel.locator(".setup-guide");
-  await expect(guide).toContainText("Bad break recovery");
-  await expect(guide).toContainText("Volatility contraction pattern");
-  await guide.locator(".setup-name", { hasText: "BBR" }).click();
-  await expect(guide.locator(".setup-text")).toBeVisible();
-  // labelled counts; clicking one opens that list filtered to the setup
-  const bbr = guide.locator(".setup-item", { hasText: "Bad break recovery" });
-  await expect(bbr.locator(".setup-counts")).toContainText("1 buy signal · 0 near misses (formed, failed a hard rule)");
-  const vcp = guide.locator(".setup-item", { hasText: "Volatility contraction pattern" });
-  await vcp.getByRole("button", { name: "1 near miss" }).click();
-  await expect(panel.locator(".scan-views button.active")).toContainText("Near misses");
-  await expect(panel.locator(".setup-filter")).toContainText("VCP Volatility contraction pattern only");
-  await expect(panel.locator(".scan-table tbody tr")).toHaveCount(1);
-  await expect(panel.locator(".scan-table tbody tr")).toContainText("INFY");
-  await panel.locator(".setup-filter").getByRole("button", { name: /show all setups/ }).click();
-  await expect(panel.locator(".setup-filter")).toHaveCount(0);
+  // risk per trade: default 1%; 2% doubles the quantity, and the explanation follows
+  const risk = panel.getByLabel("Risk per trade in percent");
+  await expect(risk).toHaveValue("1");
+  await expect(panel.locator(".field.equity")).toContainText("At risk per trade ₹5,000 = 1% x market multiplier 0.5");
+  await risk.fill("2");
+  await expect(sig).toContainText("138");
+  await expect(panel.locator(".field.equity")).toContainText("At risk per trade ₹10,000 = 2%");
+  await panel.locator(".scan-table tbody tr:not(.why-row)", { hasText: "TCS" }).click();
+  await expect(why).toContainText("risk 2% per trade");
+  await page.reload();
+  await expect(panel.getByLabel("Risk per trade in percent")).toHaveValue("2");
+  await panel.getByRole("button", { name: "reset" }).click();
+  await expect(panel.getByLabel("Risk per trade in percent")).toHaveValue("1");
+  await expect(sig).toContainText("69");
 
-  // near misses show why they failed; opening one switches its pattern on too
+  // company names under the symbols, and a search over symbol and company name
+  const tcsName = (await (await page.request.get("/api/symbols?q=TCS")).json())
+    .find((x: { symbol: string }) => x.symbol === "NSE:TCS").name as string;
+  await expect(sig.locator(".scan-name")).toHaveText(tcsName);
+  const search = panel.getByLabel("Search symbol or company");
+  await search.fill(tcsName.slice(0, 5).toLowerCase());
+  await expect(panel.locator(".scan-table tbody tr:not(.why-row)")).toHaveCount(1);
+  await expect(panel.locator(".scan-table tbody tr:not(.why-row)")).toContainText("TCS");
+  await search.fill("wip");
+  await expect(panel.locator(".scan-table tbody tr:not(.why-row)")).toContainText("WIPRO");
+  await search.fill("no-such-stock");
+  await expect(panel.locator(".scan-table tbody")).toContainText('No buy signal matches "no-such-stock"');
+  await search.fill("");
+
+  // no setup list (setups are explained in "Why this trade" and in the Pattern Screener): a filter row instead
+  await expect(panel).not.toContainText("Buy setups in this scan");
+  const chips = panel.getByRole("group", { name: "Filter by setup" }).getByRole("button");
+  await expect(chips).toHaveText([/All\s*2/, /BBR\s*1/, /PP\s*1/]);
+  await expect(chips.filter({ hasText: "BBR" })).toHaveAttribute("title", /Bad break recovery/);
+  await chips.filter({ hasText: "PP" }).click();
+  await expect(panel.locator(".scan-table tbody tr:not(.why-row)")).toHaveCount(1);
+  await expect(panel.locator(".scan-table tbody tr:not(.why-row)")).toContainText("WIPRO");
+  await chips.filter({ hasText: "PP" }).click();
+  await expect(panel.locator(".scan-table tbody tr:not(.why-row)")).toHaveCount(2);
+
+  // near misses show why they failed; opening one shows it on the chart as a near miss
   await panel.locator(".scan-views button", { hasText: "Near misses" }).click();
-  const near = panel.locator(".scan-table tbody tr", { hasText: "INFY" });
+  await expect(chips).toHaveText([/All\s*1/, /VCP\s*1/]);
+  const near = panel.locator(".scan-table tbody tr:not(.why-row)", { hasText: "INFY" });
   await expect(near).toContainText("S8-R003");
+  await openRow(near);
   await near.click();
-  await expect(page.locator(".legend-row").first()).toContainText("NSE:INFY");
-  await expect(page.locator(".scanner-hit")).toContainText("near miss: S8-R003");
-  await expect(panel.locator(".why")).toContainText("Why it is not a buy today");
-  await expect(panel.locator(".why")).toContainText("failed: S8-R003");
-  await panel.locator(".why").getByTitle("Close").click();
+  await expect(chart.locator(".legend-row").first()).toContainText("NSE:INFY");
+  await expect(chart.locator(".scanner-hit")).toContainText("near miss: S8-R003");
+  await expect(why).toContainText("Why it is not a buy today");
+  await expect(why).toContainText("failed: S8-R003");
+  await why.getByTitle("Close").click();
   await expect(panel.locator(".why")).toHaveCount(0);
-  await expect(page.getByRole("button", { name: /◈ Patterns/ })).toContainText("2");
 
   // the overlay belongs to the signal's symbol only
-  await page.locator(".search input").fill("RELIANCE");
-  await page.locator(".dropdown li", { hasText: "RELIANCE" }).first().click();
-  await expect(page.locator(".scanner-hit")).toHaveCount(0);
+  await chart.locator(".search input").fill("RELIANCE");
+  await chart.locator(".dropdown li", { hasText: "RELIANCE" }).first().click();
+  await expect(chart.locator(".scanner-hit")).toHaveCount(0);
+});
+
+test("the chart page has no alerts or scanner tab; a report chart link still opens the signal", async ({ page }) => {
+  await openApp(page);
+  await expect(page.getByRole("button", { name: /Alert/ })).toHaveCount(0);         // no Alert button
+  await expect(page.locator(".sidebar .tabs")).toHaveCount(0);                      // no tabs: the watchlist only
+  await expect(page.locator(".sidebar")).not.toContainText("Alerts");
+  await expect(page.locator(".sidebar .panel.scanner")).toHaveCount(0);
+  await expect(page.locator(".wl tbody tr").first()).toBeVisible();
+  await expect(page.getByRole("button", { name: /Explain/ })).toHaveCount(0);
+  await page.keyboard.press("Alt+a");                                             // the old shortcut does nothing
+  await expect(page.locator(".modal.alert-dialog")).toHaveCount(0);
+
+  // the scanner report's chart link opens the chart with the signal, sized with the saved portfolio
+  await page.goto("/api/scanner/report/NSE_daily_2026-11-23/charts/TCS_BBR.html");
+  await expect(page).toHaveURL(/\/$/);                                              // the address is cleaned up
+  await expect(page.locator(".legend-row").first()).toContainText("NSE:TCS");
+  await expect(page.locator(".scanner-hit")).toContainText("Bad break recovery 2026-11-23 · would buy");
+  await expect(page.locator(".scanner-hit")).toContainText("qty 69");
+});
+
+test("setup screener: a date picker, then a market; NYSE and NASDAQ scans open; no run button", async ({ page }) => {
+  const { panel, openRow } = await openSetups(page);
+  await expect(panel.locator(".panel-head").first()).toContainText("Setup Scanner");
+  await expect(panel.locator(".scan-pick .step")).toHaveText([/1\s*Date/, /2\s*Market/]);
+  await expect(panel.getByRole("button", { name: "Run scan" })).toHaveCount(0);       // no run button
+  await expect(panel.getByText("New scan")).toHaveCount(0);
+  const markets = panel.getByRole("group", { name: "Scan market" });
+  await expect(markets.getByRole("button")).toHaveText(["NSE", "NYSE", "NASDAQ"]);
+  const market = (m: string) => markets.getByRole("button", { name: m, exact: true }).click();
+  const date = panel.getByLabel("Scan date");
+  await expect(date).toHaveValue("2026-11-23");
+  await expect(date).toHaveAttribute("min", "2026-11-20");                             // the saved range
+  await expect(date).toHaveAttribute("max", "2026-11-23");
+
+  // an older NSE session; a weekend shows the Friday scan; a day without a scan says so
+  await date.fill("2026-11-20");
+  await expect(panel.locator(".scan-table tbody tr:not(.why-row)").first()).toContainText("HDFCBANK");
+  await date.fill("2026-11-22");
+  await expect(panel).toContainText("was not a session: showing the scan of 20 Nov 2026");
+  await expect(panel.locator(".scan-table tbody tr:not(.why-row)").first()).toContainText("HDFCBANK");
+  await date.fill("2026-11-10");
+  await expect(panel.locator(".scan-missing")).toContainText("No NSE scan is saved for 10 Nov 2026");
+  await expect(panel.locator(".scan-table")).toHaveCount(0);
+  await panel.getByRole("button", { name: "Latest", exact: true }).click();
+  await expect(date).toHaveValue("2026-11-23");
+  await expect(panel.locator(".scan-table tbody tr:not(.why-row)").first()).toContainText("WIPRO");
+
+  // the date stays when the market changes: 20 Nov exists for every market
+  await date.fill("2026-11-20");
+  for (const [m, sym] of [["NYSE", "IBM"], ["NASDAQ", "AAPL"]]) {
+    await market(m);
+    await expect(date).toHaveValue("2026-11-20");
+    const r = panel.locator(".scan-table tbody tr:not(.why-row)").first();
+    await expect(r).toContainText(sym);
+    const chart = await openRow(r);
+    await expect(chart.locator(".legend-row").first()).toContainText(`${m}:${sym}`);
+    await r.click();
+    await expect(panel.locator(".why")).toContainText(`Why this trade: ${sym}`);
+    await expect(panel.locator(".why")).toContainText("$");                  // US prices in dollars
+  }
+
+  // the portfolio box follows the scan's currency: dollars for NYSE / NASDAQ, rupees in lakh for NSE
+  await market("NYSE");
+  const usd = panel.getByLabel("Portfolio size in dollars");
+  await expect(usd).toHaveValue("100000");                                  // default $100,000
+  await expect(panel.locator(".field.equity")).not.toContainText("lakh");
+  await expect(panel.locator(".field.equity")).toContainText("At risk per trade $1,000 = 1%");
+  const ibm = panel.locator(".scan-table tbody tr:not(.why-row)", { hasText: "IBM" });
+  await expect(ibm).toContainText("138");                                   // floor($100,000 x 1% / 7.20)
+  await expect(ibm).toContainText("$33,120 · 33.1%");
+  await ibm.click();
+  await expect(panel.locator(".why")).toContainText("Portfolio size $100,000.00");
+  await usd.fill("50000");
+  await expect(ibm).toContainText("69");
+  await expect(panel.locator(".why")).toContainText("Portfolio size $50,000.00");
+
+  await market("NSE");                                                      // rupees again, its own value
+  await expect(panel.getByLabel("Portfolio size in lakh")).toHaveValue("10");
+  await expect(panel.getByLabel("Portfolio size in dollars")).toHaveCount(0);
+  await market("NASDAQ");
+  await expect(panel.getByLabel("Portfolio size in dollars")).toHaveValue("50000"); // remembered per currency
+});
+
+test("Setup Screener opens as its own page next to the Pattern Screener; a signal opens its chart", async ({ page }) => {
+  await openApp(page);
+  const links = page.locator(".topbar a.toolbar-link");
+  await expect(links).toHaveText(["▦ Pattern Screener ↗", "▤ Setup Screener ↗"]);   // side by side
+  const [setups] = await Promise.all([page.context().waitForEvent("page"),
+    page.getByRole("link", { name: /Setup Screener/ }).click()]);
+  await expect(setups).toHaveURL(/\?page=setups$/);
+  await expect(setups).toHaveTitle("Setup Screener · Charting Lab");
+  await expect(setups.locator(".page-title")).toHaveText("Setup Screener");
+  const panel = setups.locator(".panel.scanner.page");
+  await expect(panel.getByRole("group", { name: "Scan market" }).locator("button.active")).toHaveText("NSE");
+  await expect(panel.getByLabel("Portfolio size in lakh")).toHaveValue("10");
+  // "Risk per trade" sits to the right of "Portfolio size", on the same line
+  const pf = (await panel.getByLabel("Portfolio size in lakh").boundingBox())!;
+  const rk = (await panel.getByLabel("Risk per trade in percent").boundingBox())!;
+  expect(rk.x).toBeGreaterThan(pf.x + pf.width);
+  expect(Math.abs(rk.y - pf.y)).toBeLessThan(6);
+
+  // a signal shows its explanation here and opens its chart in a Charting Lab tab
+  const tcs = panel.locator(".scan-table tbody tr:not(.why-row)", { hasText: "TCS" });
+  const [chart] = await Promise.all([setups.context().waitForEvent("page"), tcs.locator("a.scan-sym").click()]);
+  await tcs.click();
+  await expect(panel.locator(".why")).toContainText("Why this trade: TCS · BBR · 2026-11-23");
+  await expect(chart.locator(".legend-row").first()).toContainText("NSE:TCS");
+  await expect(chart.locator(".scanner-hit")).toContainText("Bad break recovery 2026-11-23");
+
+  // changing the portfolio re-sizes here without opening another chart tab
+  const before = setups.context().pages().length;
+  await panel.getByLabel("Portfolio size in lakh").fill("20");
+  await expect(panel.locator(".scan-table tbody tr:not(.why-row)", { hasText: "TCS" })).toContainText("138");
+  await setups.waitForTimeout(600);
+  expect(setups.context().pages().length).toBe(before);
 });

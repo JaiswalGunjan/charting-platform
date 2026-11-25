@@ -1,4 +1,4 @@
-// Pure logic of the "Patterns formed today" dashboard (kept out of the component so it is unit-tested).
+// Pure logic of the Pattern Screener dashboard (kept out of the component so it is unit-tested).
 import type { TodayRow } from "./api";
 
 export type SortKey = "ticker" | "name" | "close" | "change_pct" | "turnover" | "patterns";

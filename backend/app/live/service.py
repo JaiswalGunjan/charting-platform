@@ -194,7 +194,9 @@ class LiveService:
             last_1m = get_bars(s, symbol_id, TIMEFRAMES["1m"], limit=1)
         prev_close = None
         if len(daily):
-            today = int(daily.t[-1]) == live_bucket(TIMEFRAMES["1D"], now, market)
+            # with no ticks coming the last stored bar is the quote, so its change is against the bar before it
+            today = (int(daily.t[-1]) == live_bucket(TIMEFRAMES["1D"], now, market)
+                     or getattr(self.source, "name", "") == "static")
             idx = -2 if today else -1
             if len(daily) >= abs(idx):
                 prev_close = float(daily.c[idx])

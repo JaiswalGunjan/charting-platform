@@ -20,8 +20,8 @@ observability).
 
 ## Decisions so far
 - Chart engine: TradingView Lightweight Charts (Apache 2.0, attribution to TradingView
-  required) for the MVP; custom Canvas/WebGL engine later. The in-chart logo and the footer credit are off at
-  the owner's request (24 Nov 2026). The licence still requires its attribution notice and a link to
+  required) for the MVP; custom Canvas/WebGL engine later. The footer credit is off at the owner's request
+  (24 Nov 2026); the in-chart TradingView logo (bottom left) is on again at his request (25 Nov 2026). The licence still requires its attribution notice and a link to
   tradingview.com on a page available to users: that is the About dialog (footer "About" link,
   App.tsx). Never remove it.
 - Frontend: React + TypeScript + Vite (Next.js only for public SEO pages).
@@ -43,21 +43,30 @@ Lightweight Charts + FastAPI + PostgreSQL/TimescaleDB + Redis + Kite Connect:
 6. First AI feature: "explain this chart" from OHLCV + indicator context.
 
 ## Implementation status (24 Nov 2026)
-Milestones M1–M12 are built: backend (`backend/`, 224 pytest tests; 65 Vitest + 19 Playwright tests in `frontend/tests`) and frontend (`frontend/`,
+Milestones M1–M12 are built: backend (`backend/`, 247 pytest tests; 66 Vitest + 24 Playwright tests in `frontend/tests`) and frontend (`frontend/`,
 React 19 + Vite 7 + lightweight-charts 5.3, v5 `addSeries(XSeries, opts, paneIndex)` API).
 `run-demo.ps1` starts everything. See README.md for the milestone table and API overview.
 Node is a portable copy in `.tools/node` (gitignored); put it on PATH before running npm.
 Real data: the owner keeps adjusted daily bhavcopies (NSE/BSE/NASDAQ/NYSE, 2016+) in a local
 `market_data_daily` folder and adjusted hourly bars (2024-10+) in `market_data_hourly`;
 `DATA_SOURCE=eod` + `import-eod` loads both (backend/app/marketdata/eod.py).
-In that mode live ticks are simulated and not persisted (LiveService `persist=False`).
+In that mode there are no ticks: quotes are the last real close (StaticTickSource; simulated ticks were removed at the
+owner's request 25 Nov 2026, opt-in with SIMULATE_TICKS=true, which the e2e tests use); nothing is persisted.
 Chart patterns: `backend/app/patterns/rules.py` is a generated verbatim copy of the owner's rule functions in
 `TranscriptExtract/swingbt/rules/` (bases.py, shapers.py, pocket_pivot.py, cycle.py, support_resistance.py), so
 the chart marks what his backtester trades; regenerate with `python -m app.patterns.sync_rules`, never hand-edit.
-Patterns-today dashboard: `app/patterns/screener.py` (latest-bar screen per exchange and 1D/1W, saved as JSON in
-backend/data/screens; `app.cli screen`), API `app/api/screener.py`, UI `frontend/src/PatternsToday.tsx`.
+Pattern Screener (was "patterns today"): `app/patterns/screener.py` (screen per exchange, 1D/1W and session date,
+saved as JSON in backend/data/screens, EX_TF_DATE.json + EX_TF.json = newest; `app.cli screen [--date|--days]`), API
+`app/api/screener.py`, UI `frontend/src/PatternsToday.tsx` on its own page (`ScreenerPage.tsx`, `/?page=screener`).
+Brand: our own logo, `frontend/src/Logo.tsx` = `frontend/public/favicon.svg` (tab icon).
+Setup Screener page: `frontend/src/SetupPage.tsx` (`/?page=setups`, the ScannerPanel full width); pages are routed in main.tsx.
+The chart page (App.tsx) has no alerts and no scanner tab (removed at the owner's request, 25 Nov 2026): the sidebar is
+the watchlist; scanner links (/?scan=...&symbol=...&setup=...) open the signal on the chart directly. The SwingScanner tab is named "Setup Scanner".
 SwingScanner: `backend/app/api/scanner.py` reads the owner's scanner bundle (`SCANNER_DIR`: scans/*/signals.csv,
 near_misses.csv, market.json, portfolio.json) and proxies run/job to its local server (:8765); read-only.
+It flags US data that holds only stubs (`data_warnings`): SwingScanner.exe of 18 Nov fails on it; the source does not.
+Its HTML report is served restyled in our theme by `app/api/scanner_report.py` (theme in `app/static/scanner_report.*`,
+files read, never written; the report's own /api actions are passed to the scanner's server).
 Prototype-stage choices, all cheap to reverse: SQLite default via `DATABASE_URL` (Postgres/
 Timescale ready), in-memory live store unless `REDIS_URL`, single local user (`user_id=1`,
 no auth yet), JSON over WebSocket (binary frames later), live pipeline in Python (Go later).

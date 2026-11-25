@@ -7,7 +7,7 @@
     python -m app.cli seed            # init + symbols + 30d of 1m + 5y of 1D for the whole universe
     python -m app.cli kite-login      # daily Kite access-token flow
     python -m app.cli import-eod --dir <market_data_daily> --exchanges NSE   # real daily (+ hourly) history from CSVs
-    python -m app.cli screen [--exchanges NSE --tf 1D,1W]                    # patterns formed today (dashboard)
+    python -m app.cli screen [--exchanges NSE --tf 1D,1W] [--date D | --days 30]  # pattern screener (dashboard)
     python -m app.cli update-names                                            # company names from exchange lists
     python -m app.cli import-eod --only hourly                                # just the 1h bars (EOD_HOURLY_DIR)
 """
@@ -111,16 +111,23 @@ def cmd_import_eod(args: argparse.Namespace) -> None:
 
 def cmd_screen(args: argparse.Namespace) -> None:
     """'Patterns formed today' for the dashboard (schedule it after the nightly data import)."""
-    from app.patterns.screener import run_screen
+    from app.patterns.screener import backfill_days, run_screen, screen_dates
 
     settings = get_settings()
     init_db()
     exchanges = [e.strip().upper() for e in (args.exchanges.split(",") if args.exchanges else settings.eod_exchanges)]
     for ex in exchanges:
         for tf in args.tf.replace(",", " ").split():         # "1D,1W" or "1D 1W" (PowerShell splits commas)
-            r = run_screen(SessionLocal, ex, tf)
-            print(f"{ex} {tf}: {len(r['rows']):,} symbols with patterns on the latest bar, of {r['scanned']:,} "
-                  f"screened, in {r.get('seconds', 0)}s")
+            if args.days:
+                have = set(screen_dates(ex, tf))
+                days = [d for d in backfill_days(SessionLocal, ex, tf, args.days) if d not in have]
+                print(f"{ex} {tf}: {len(days)} sessions to screen in the last {args.days} days")
+            else:
+                days = [args.date or None]
+            for day in days:
+                r = run_screen(SessionLocal, ex, tf, day=day)
+                print(f"{ex} {tf} {r.get('session', '')}: {len(r['rows']):,} symbols with patterns, of "
+                      f"{r['scanned']:,} screened, in {r.get('seconds', 0)}s", flush=True)
 
 
 def cmd_update_names(args: argparse.Namespace) -> None:
@@ -174,6 +181,9 @@ def main(argv: list[str] | None = None) -> None:
     sc = sub.add_parser("screen", help="patterns formed on the latest bar, for the dashboard")
     sc.add_argument("--exchanges", default="", help="default: EOD_EXCHANGES")
     sc.add_argument("--tf", default="1D,1W", help="1D, 1W or 1D,1W")
+    sc.add_argument("--date", default="", help="screen the bar of this session (YYYY-MM-DD; default: the latest)")
+    sc.add_argument("--days", type=int, default=0,
+                    help="backfill: screen every session of the last N days that has no saved screen")
     sc.set_defaults(fn=cmd_screen)
     un = sub.add_parser("update-names", help="refresh company names from public exchange listings")
     un.add_argument("--exchanges", default="", help="default: EOD_EXCHANGES")

@@ -107,7 +107,7 @@ def test_run_and_job_go_to_the_running_scanner(client, scan_root, monkeypatch):
     monkeypatch.setattr(scanner, "_server", fake)
     st = client.get("/scanner").json()
     assert st["online"] and st["markets"][0] == {"market": "NSE", "ok": True, "last": "2026-11-23",
-                                                  "dates": ["2026-11-23"]}
+                                                  "dates": ["2026-11-23"], "warning": None}
     assert client.post("/scanner/run", json={"market": "nse"}).json()["ok"] is True
     assert ("/api/launcher/scan", {"market": "NSE", "date": "2026-11-23"}) in calls      # latest date by default
     client.post("/scanner/run", json={"market": "NSE", "date": "2026-11-20"})
@@ -132,3 +132,15 @@ def test_setup_explanations_come_from_the_scanner_source(client, scan_root, tmp_
     assert s["VCP"]["name"] == "Volatility contraction pattern"     # built-in names fill the rest
     d = client.get("/scanner/scans/NSE_daily_2026-11-23").json()
     assert d["setups"]["BBR"]["what"] == "What it is."
+
+
+def test_scan_rows_carry_company_names(client, scan_root):
+    """The scan files hold tickers only; names come from our symbol list ('' for a stock we do not know)."""
+    root, _ = scan_root
+    f = root / "my_scans" / "NSE_daily_2026-11-23" / "signals.csv"
+    f.write_text(f.read_text() + row("TCS", "PP", 4, 6.0))
+    name = client.get("/symbols/NSE:TCS").json().get("name") or client.get("/symbols", params={"q": "TCS"}).json()[0]["name"]
+    assert name
+    by = {r["ticker"]: r for r in client.get("/scanner/scans/NSE_daily_2026-11-23").json()["signals"]}
+    assert by["TCS"]["name"] == name
+    assert by["MARICO"]["name"] == ""                       # not in the test universe

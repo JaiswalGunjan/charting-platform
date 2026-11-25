@@ -73,6 +73,8 @@ interface Legend {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+const RIGHT_GAP = 3;   // bars of empty space the move-right button leaves after the latest bar
+
 export default function Chart(props: Props) {
   const { symbol, tf, theme, range, indicators, metas, alerts, aiLevels } = props;
   const box = useRef<HTMLDivElement>(null);
@@ -102,9 +104,9 @@ export default function Chart(props: Props) {
       layout: {
         background: { type: ColorType.Solid, color: CHART_THEME[theme].bg },
         fontFamily: "Inter, Segoe UI, system-ui, sans-serif",
-        // no logo on the chart: the attribution notice and link the licence asks for are on the About page
-        // (footer "About" link, App.tsx)
-        attributionLogo: false,
+        // the library's TradingView logo, bottom left (on again at the owner's request, 25 Nov 2026); the licence's
+        // attribution notice and link are also on the About page (footer "About" link, App.tsx)
+        attributionLogo: true,
         panes: { enableResize: true },
       },
       crosshair: { mode: CrosshairMode.Normal },
@@ -500,6 +502,46 @@ export default function Chart(props: Props) {
   const lg = legend ?? (last ? { o: last.o, h: last.h, l: last.l, c: last.c, v: last.v } : null);
   const up = lg ? lg.c >= lg.o : true;
 
+  // the visible bar range, on the zoom bar's data attributes (lets the end-to-end tests see zoom and moves)
+  const navRef = useRef<HTMLDivElement>(null);
+  const [edge, setEdge] = useState({ start: false, end: false });   // the first / the latest bar is in view
+  const lastIndex = () => (candles.current?.data().length ?? 0) - 1;
+  useEffect(() => {
+    const ts = apiObjs?.chart.timeScale();
+    if (!ts) return;
+    const mark = (r: { from: number; to: number } | null) => {
+      if (r && navRef.current) {
+        navRef.current.dataset.from = r.from.toFixed(2);
+        navRef.current.dataset.to = r.to.toFixed(2);
+      }
+      if (r) {
+        const start = r.from <= 0.5, end = r.to >= lastIndex() + RIGHT_GAP - 0.5;
+        setEdge((e) => (e.start === start && e.end === end ? e : { start, end }));
+      }
+    };
+    ts.subscribeVisibleLogicalRangeChange(mark);
+    mark(ts.getVisibleLogicalRange());
+    return () => ts.unsubscribeVisibleLogicalRangeChange(mark);
+  }, [apiObjs]);
+
+  /** Zoom (keeps the right edge, so the latest bars stay in view) and move by a quarter of the view. */
+  const nav = (kind: "in" | "out" | "left" | "right") => {
+    const ts = chart.current?.timeScale();
+    const r = ts?.getVisibleLogicalRange();
+    if (!ts || !r) return;
+    const w = r.to - r.from;
+    if (kind === "in" || kind === "out") {
+      const nw = Math.max(10, w * (kind === "in" ? 0.7 : 1 / 0.7));
+      ts.setVisibleLogicalRange({ from: r.to - nw, to: r.to });
+    } else {
+      // a quarter of the view, but never past the first bar (left) or the latest bar plus a small gap (right)
+      const want = w * 0.25 * (kind === "left" ? -1 : 1);
+      const d = kind === "left" ? Math.max(want, Math.min(0, -r.from)) : Math.min(want, Math.max(0, lastIndex() + RIGHT_GAP - r.to));
+      if (Math.abs(d) < 0.01) return;
+      ts.setVisibleLogicalRange({ from: r.from + d, to: r.to + d });
+    }
+  };
+
   return (
     <div className="chart-wrap">
       <DrawingTools chart={apiObjs?.chart ?? null} series={apiObjs?.series ?? null} host={box.current}
@@ -553,6 +595,14 @@ export default function Chart(props: Props) {
         })}
       </div>
       <div className="chart" ref={box} />
+      <div className="chart-nav" role="toolbar" aria-label="Zoom and move" ref={navRef}>
+        <button onClick={() => nav("in")} title="Zoom in" aria-label="Zoom in">＋</button>
+        <button onClick={() => nav("out")} title="Zoom out" aria-label="Zoom out">−</button>
+        <button onClick={() => nav("left")} disabled={edge.start} aria-label="Move left"
+          title={edge.start ? "The first bar is in view" : "Move left (earlier bars)"}>◀</button>
+        <button onClick={() => nav("right")} disabled={edge.end} aria-label="Move right"
+          title={edge.end ? "The latest bar is in view" : "Move right (later bars)"}>▶</button>
+      </div>
     </div>
   );
 }

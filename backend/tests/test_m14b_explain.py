@@ -61,8 +61,8 @@ def test_position_size_follows_the_users_equity(client, scan_root):  # noqa: F81
     q = dict(symbol="MARICO", setup="BBR")
     size = lambda **kw: " ".join(client.get("/scanner/scans/NSE_daily_2026-11-23/explain",  # noqa: E731
                                             params=q | kw).json()["sections"][4]["lines"])
-    assert "Equity ₹1,000,000.00" in size() and "= 181;" in size()                  # the scan's own capital
-    assert "Equity ₹2,500,000.00" in size(equity=2500000) and "= 453;" in size(equity=2500000)
+    assert "Portfolio size ₹1,000,000.00" in size() and "= 181;" in size()                  # the scan's own capital
+    assert "Portfolio size ₹2,500,000.00" in size(equity=2500000) and "= 453;" in size(equity=2500000)
     assert "= 18;" in size(equity=100000) and "sized by risk" in size(equity=100000)
     assert client.get("/scanner/scans/NSE_daily_2026-11-23/explain", params=q | {"equity": 0}).status_code == 422
     d = client.get("/scanner/scans/NSE_daily_2026-11-23").json()
@@ -73,5 +73,16 @@ def test_position_cap_at_45_percent():
     from app.scanner_explain import position
 
     assert position(1_000_000, 919.5, 891.91, 1.0, 0.5) == (181, "risk")
-    assert position(1_000_000, 100, 99.5, 1.0, 1.0) == (4500, "max 45% of equity")
+    assert position(1_000_000, 100, 99.5, 1.0, 1.0) == (4500, "max 45% of the portfolio")
     assert position(1_000_000, 100, 100, 1.0, 1.0) == (0, "invalid stop")
+
+
+def test_risk_per_trade_is_the_users_choice(client, scan_root):  # noqa: F811
+    q = dict(symbol="MARICO", setup="BBR")
+    size = lambda **kw: " ".join(client.get("/scanner/scans/NSE_daily_2026-11-23/explain",  # noqa: E731
+                                            params=q | kw).json()["sections"][4]["lines"])
+    two = size(equity=1000000, risk_pct=2)
+    assert "risk 2% per trade" in two and "= ₹10,000.00 at risk" in two and "= 362;" in two   # twice the 1% size
+    assert "= 90;" in size(equity=1000000, risk_pct=0.5)
+    for bad in (0, -1, 101):
+        assert client.get("/scanner/scans/NSE_daily_2026-11-23/explain", params=q | {"risk_pct": bad}).status_code == 422

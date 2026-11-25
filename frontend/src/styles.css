@@ -72,7 +72,9 @@ a { color: var(--accent); cursor: pointer; text-decoration: none; }
   display: flex; align-items: center; gap: 8px; padding: 0 10px;
   background: var(--panel); border-bottom: 1px solid var(--border);
 }
-.brand { font-weight: 700; letter-spacing: .3px; color: var(--accent); margin-right: 6px; white-space: nowrap; }
+.brand { font-weight: 700; letter-spacing: .3px; color: var(--accent); margin-right: 6px; white-space: nowrap;
+  display: inline-flex; align-items: center; gap: 7px; }
+.brand .logo { flex: none; display: block; }
 .quote { display: flex; gap: 8px; align-items: baseline; white-space: nowrap; min-width: 170px; }
 .quote b { font-size: 15px; }
 .sep { width: 1px; height: 22px; background: var(--border); }
@@ -359,3 +361,84 @@ table.funcs td { padding: 2px 6px 2px 0; vertical-align: top; }
 .setup-filter { display: flex; align-items: center; gap: 5px; font-size: 12px; margin: 2px 0 4px; flex-wrap: wrap; }
 .setup-filter .link { font-size: 11px; padding: 0; margin-left: auto; }
 .scanner .field.equity input { width: 120px; }
+.scanner .field.equity .equity-label { width: 92px; color: var(--muted); }
+.scanner .field.equity input { width: 90px; }
+
+/* Pattern Screener on its own page; the top-bar link that opens it */
+.topbar .toolbar-link { padding: 5px 10px; border-radius: 6px; color: var(--text); text-decoration: none; white-space: nowrap; }
+.topbar .toolbar-link:hover { background: var(--panel-2); }
+a.brand { text-decoration: none; }
+.page-title { font-weight: 600; font-size: 14px; padding-left: 10px; border-left: 1px solid var(--border); }
+.screener-page .main { grid-template-columns: 1fr; }
+.screener-page .today { height: 100%; }
+.today-steps { gap: 18px; }
+.today-steps .step { display: inline-flex; align-items: center; gap: 7px; font-weight: 600; }
+.today-steps .step-n { display: inline-grid; place-items: center; width: 18px; height: 18px; border-radius: 50%;
+  background: var(--accent); color: #fff; font-size: 11px; }
+.today-steps input[type="date"] { font: inherit; font-weight: 400; padding: 3px 6px; border: 1px solid var(--border);
+  border-radius: 6px; background: var(--panel); color: var(--text); }
+.today-status { padding: 6px 14px; border-bottom: 1px solid var(--border); background: var(--panel); }
+.today-status .today-asof { white-space: normal; }
+
+/* zoom / move buttons, bottom middle of the chart (above the time axis) */
+.chart-nav { position: absolute; left: calc(50% + 20px); bottom: 38px; transform: translateX(-50%); z-index: 5;
+  display: flex; gap: 4px; padding: 3px; border-radius: 8px; background: var(--chip); box-shadow: var(--shadow);
+  opacity: .75; transition: opacity .15s; }
+.chart-wrap:hover .chart-nav, .chart-nav:focus-within { opacity: 1; }
+.chart-nav button { width: 30px; height: 26px; padding: 0; border: 1px solid var(--border); border-radius: 6px;
+  background: var(--panel); color: var(--text); font-size: 14px; line-height: 1; cursor: pointer; }
+.chart-nav button:hover:not(:disabled) { background: var(--panel-2); border-color: var(--accent); }
+.chart-nav button:disabled { opacity: .35; cursor: default; }
+
+/* Setup Screener on its own page */
+.setup-page .main.setup-main { display: block; overflow: auto; }
+.scanner.page { max-width: 1000px; margin: 0 auto; padding: 12px 18px 40px; height: auto; overflow: visible; }
+.scanner.page .scan-table td, .scanner.page .scan-table th { padding: 7px 8px; }
+
+/* Setup Screener: 1 Date, 2 Market */
+.field.scan-pick { display: flex; flex-direction: row; flex-wrap: wrap; align-items: center; justify-content: flex-start; gap: 10px 16px; }
+.scan-pick .step { flex: none; }
+.scan-pick .step input[type="date"] { width: 140px; }
+.scan-missing button.link { padding: 0; }
+
+/* "Portfolio size" and "Risk per trade" side by side; the at-risk summary below them */
+.scanner .field.equity { flex-direction: row; flex-wrap: wrap; align-items: center; gap: 6px 22px; }
+.scanner .field.equity > .row { flex: none; align-items: center; gap: 6px; }
+.scanner .field.equity .equity-label { width: auto; }
+.scanner .field.equity > span.small { flex-basis: 100%; }
+
+/* Setup Screener: filter the table by setup */
+.scanner .setup-filter { display: flex; flex-wrap: wrap; gap: 4px 6px; align-items: center; margin: 6px 0; }
+.scanner .setup-filter .chip { cursor: pointer; }
+.scanner .setup-filter .chip.on { border-color: var(--accent); color: var(--accent); }
+
+/* Segmented controls (Buy signals / Near misses, markets, exchanges, timeframes): a bordered group of buttons,
+   the active one solid accent with white text, so the current choice is obvious in day and night views */
+.tabs.inline.seg { display: inline-flex; gap: 0; padding: 2px; border: 1px solid var(--border); border-radius: 8px;
+  background: var(--panel-2); }
+.tabs.inline.seg button { flex: none; border: 0; border-radius: 6px; padding: 5px 14px; font-size: 13px; font-weight: 600;
+  color: var(--text); background: transparent; white-space: nowrap; cursor: pointer; }
+.tabs.inline.seg button:hover:not(:disabled):not(.active) { background: var(--panel); color: var(--accent); }
+.tabs.inline.seg button.active { background: var(--accent); color: #fff; box-shadow: 0 1px 3px #0003; }
+.tabs.inline.seg button:disabled { color: var(--muted); opacity: .5; cursor: default; }
+.tabs.inline.seg.scan-views { display: flex; width: 100%; margin: 4px 0 2px; }
+.tabs.inline.seg.scan-views button { flex: 1; padding: 7px 10px; font-size: 13px; }
+.seg-count { display: inline-block; min-width: 20px; margin-left: 6px; padding: 0 6px; border-radius: 10px;
+  font-size: 11px; line-height: 17px; background: var(--border); color: var(--text); }
+.tabs.inline.seg button.active .seg-count { background: #ffffff33; color: #fff; }
+.today-steps .step button.small.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+/* Setup Screener rows: symbol link to the chart, company name, the trade summary opened under its row */
+.scanner .scan-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; margin: 6px 0; }
+.scanner .scan-search { flex: 0 1 260px; padding: 5px 9px; border: 1px solid var(--border); border-radius: 6px;
+  background: var(--panel); color: var(--text); font: inherit; }
+.scanner .scan-tools .setup-filter { margin: 0; }
+.scan-table a.scan-sym { font-weight: 700; color: var(--accent); text-decoration: none; }
+.scan-table a.scan-sym:hover { text-decoration: underline; }
+.scan-table .scan-name { color: var(--text); opacity: .8; }
+.scan-table .twisty { display: inline-block; width: 12px; font-size: 10px; }
+.scan-table tbody tr { cursor: pointer; }
+.scan-table tr.open > td { background: var(--panel-2); }
+.scan-table tr.why-row { cursor: default; }
+.scan-table tr.why-row > td { padding: 0 6px 10px; background: var(--panel-2); text-align: left; white-space: normal; }
+.scan-table tr.why-row .why { margin: 0; border-top: 0; }

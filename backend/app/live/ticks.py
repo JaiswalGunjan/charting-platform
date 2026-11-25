@@ -144,6 +144,23 @@ class KiteTickSource:
             self._loop.call_soon_threadsafe(self._on_tick, tick)
 
 
+class StaticTickSource:
+    """No ticks at all: quotes stay at the last real close (end-of-day data without a live feed)."""
+    name = "static"
+
+    async def start(self, on_tick: OnTick) -> None:
+        pass
+
+    async def stop(self) -> None:
+        pass
+
+    async def subscribe(self, sym: SymbolInfo, last_price: float | None) -> None:
+        pass
+
+    async def unsubscribe(self, sym: SymbolInfo) -> None:
+        pass
+
+
 class ManualTickSource:
     """For tests: ticks are pushed explicitly with `emit`."""
     name = "manual"
@@ -177,4 +194,6 @@ class ManualTickSource:
 def make_tick_source(settings: Settings) -> TickSource:
     if settings.data_source == "kite":
         return KiteTickSource(settings)
-    return SyntheticTickSource(interval_s=settings.synthetic_tick_interval_ms / 1000)
+    if settings.simulate_ticks:
+        return SyntheticTickSource(interval_s=settings.synthetic_tick_interval_ms / 1000)
+    return StaticTickSource()

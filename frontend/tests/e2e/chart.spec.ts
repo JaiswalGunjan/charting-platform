@@ -8,10 +8,14 @@ test("app loads: chart, quote, live badge, watchlist; attribution on the About p
   await expect(page.locator(".legend-row").first()).toContainText("· 1D");
   await expect(page.locator(".chart canvas").first()).toBeVisible();
   await expect(page.locator(".quote b")).toHaveText(/[\d,]+\.\d\d/);
-  await expect(page.locator(".conn")).toContainText(/Simulated ticks|Live/);
+  await expect(page.locator(".conn")).toContainText(/Simulated ticks|Live|Last close/);
   await expect(page.locator(".wl tbody tr").first()).toBeVisible();
-  // no TradingView branding on the screen; the licence's attribution notice + link live on the About page
-  await expect(page.locator('.chart a[href*="tradingview"]')).toHaveCount(0);
+  // the TradingView logo at the bottom left of the chart; the licence's attribution notice + link are on the About page
+  const logo = page.locator('.chart a[href*="tradingview"]').first();
+  await expect(logo).toBeVisible();
+  const box = (await logo.boundingBox())!, chart = (await page.locator(".chart").first().boundingBox())!;
+  expect(box.x - chart.x).toBeLessThan(chart.width / 4);                      // left
+  expect(box.y - chart.y).toBeGreaterThan(chart.height / 2);                  // bottom
   await expect(page.locator("footer")).not.toContainText("TradingView");
   await page.locator("footer").getByRole("button", { name: "About" }).click();
   const about = page.locator(".modal.about");
@@ -84,4 +88,49 @@ test("day view by default (even with a dark OS), night toggle is remembered", as
   await page.reload();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
   await expect(page.locator(".theme-toggle")).toContainText("Night");
+});
+
+test("zoom in / out and move left / right from the buttons at the bottom middle of the chart", async ({ page }) => {
+  await openApp(page);
+  const bar = page.getByRole("toolbar", { name: "Zoom and move" });
+  await expect(bar.getByRole("button")).toHaveText(["＋", "−", "◀", "▶"]);
+  const box = (await bar.boundingBox())!, chart = (await page.locator(".chart-wrap").boundingBox())!;
+  expect(Math.abs(box.x + box.width / 2 - (chart.x + chart.width / 2))).toBeLessThan(60);   // centred
+  expect(chart.y + chart.height - (box.y + box.height)).toBeLessThan(80);                   // at the bottom
+
+  const range = async () => ({ from: Number(await bar.getAttribute("data-from")), to: Number(await bar.getAttribute("data-to")) });
+  await expect(bar).toHaveAttribute("data-from", /\d/);
+  const r0 = await range();
+  const w0 = r0.to - r0.from;
+  await bar.getByRole("button", { name: "Zoom in" }).click();
+  await expect.poll(async () => { const r = await range(); return r.to - r.from; }).toBeLessThan(w0 * 0.8);
+  const r1 = await range();
+  expect(r1.to).toBeCloseTo(r0.to, 0);                                                     // right edge kept
+  await bar.getByRole("button", { name: "Zoom out" }).click();
+  await bar.getByRole("button", { name: "Zoom out" }).click();
+  await expect.poll(async () => { const r = await range(); return r.to - r.from; }).toBeGreaterThan(r1.to - r1.from);
+  const r2 = await range();
+  await bar.getByRole("button", { name: "Move left" }).click();
+  await expect.poll(async () => (await range()).from).toBeLessThan(r2.from - 1);           // earlier bars
+  const r3 = await range();
+  expect(r3.to - r3.from).toBeCloseTo(r2.to - r2.from, 0);                                 // same width
+  await bar.getByRole("button", { name: "Move right" }).click();
+  await expect.poll(async () => (await range()).from).toBeGreaterThan(r3.from + 1);        // later bars
+
+  // moving right stops at the latest bar (plus a small gap); the button is then disabled
+  const right = bar.getByRole("button", { name: "Move right" });
+  for (let k = 0; k < 20 && (await right.isEnabled()); k++) await right.click();
+  await expect(right).toBeDisabled();
+  const atEnd = await range();
+  await right.click({ force: true });                                                      // no effect when disabled
+  expect((await range()).to).toBeCloseTo(atEnd.to, 1);
+
+  // moving left stops at the first bar (older history loads as it is reached), never before it
+  await page.locator(".rangebar button", { hasText: "All" }).click();
+  await bar.getByRole("button", { name: "Zoom in" }).click();
+  const left = bar.getByRole("button", { name: "Move left" });
+  for (let k = 0; k < 60 && (await left.isEnabled()); k++) { await left.click(); await page.waitForTimeout(60); }
+  await expect(left).toBeDisabled();
+  expect((await range()).from).toBeGreaterThanOrEqual(-0.01);
+  await expect(right).toBeEnabled();
 });

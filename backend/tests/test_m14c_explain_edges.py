@@ -20,7 +20,7 @@ def test_us_signal_in_dollars():
     assert e["symbol"] == "NYSE:AAPL"
     assert "Stop $190.00 = 5.00% below the entry $200.00" in text(e, 2) and "1R = $10.00" in text(e, 2)
     assert "₹" not in " ".join(text(e, i) for i in range(6))
-    assert "Equity $1,000,000.00" in text(e, 4) and "= 1,000;" in text(e, 4)        # 10,000 at risk / 10 a share
+    assert "Portfolio size $1,000,000.00" in text(e, 4) and "= 1,000;" in text(e, 4)        # 10,000 at risk / 10 a share
 
 
 def test_more_than_three_rules_and_unknown_rule_text():
@@ -49,7 +49,7 @@ def test_setup_multiplier_and_missing_market_file():
                                          "tested the next session."]
     assert not any(x.startswith("Market:") for x in e["sections"][5]["lines"])
     e = explain(ROW, "NSE", SETUP, {}, {}, equity=500_000)                    # the user's equity still sizes it
-    assert "Equity ₹500,000.00" in text(e, 4) and "= 500;" in text(e, 4)
+    assert "Portfolio size ₹500,000.00" in text(e, 4) and "= 500;" in text(e, 4)
 
 
 def test_setup_without_a_description_and_context_line():
@@ -61,4 +61,4 @@ def test_setup_without_a_description_and_context_line():
 def test_position_capped_at_45_percent_is_explained():
     row = dict(ROW, close="100", stop="99.9")                                  # a very tight stop
     e = explain(row, "NSE", SETUP, {}, META)
-    assert "= 4,500;" in text(e, 4) and "sized by max 45% of equity" in text(e, 4) and "(45.0% of equity)" in text(e, 4)
+    assert "= 4,500;" in text(e, 4) and "sized by max 45% of the portfolio" in text(e, 4) and "(45.0% of the portfolio)" in text(e, 4)

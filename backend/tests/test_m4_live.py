@@ -158,3 +158,41 @@ def test_quotes_endpoint(client, ticks):
     else:
         raise AssertionError("quote not updated")
     assert client.get("/quotes", params={"symbols": "NSE:NOPE"}).status_code == 404
+
+
+def test_no_simulated_ticks_by_default(monkeypatch):
+    """Without a real feed the quote is the last real close, and nothing moves (no random-walk ticks)."""
+    from app.config import Settings
+    from app.live.ticks import StaticTickSource, SyntheticTickSource, make_tick_source
+
+    assert isinstance(make_tick_source(Settings(data_source="eod")), StaticTickSource)
+    assert isinstance(make_tick_source(Settings(data_source="synthetic")), StaticTickSource)
+    assert isinstance(make_tick_source(Settings(data_source="eod", simulate_ticks=True)), SyntheticTickSource)
+
+
+def test_static_quote_is_the_last_close_and_its_change(session_factory):
+    import asyncio
+
+    from app.live.service import LiveService
+    from app.live.store import make_store
+    from app.live.ticks import StaticTickSource
+    from app.marketdata.loader import resolve_symbol
+    from app.marketdata.timeframes import TIMEFRAMES
+    from app.marketdata.history import get_bars
+
+    async def run():
+        live = LiveService(StaticTickSource(), make_store(""), session_factory, persist=False,
+                           clock=lambda: 4_000_000_000.0)            # long after the data: no bar is "today"
+        await live.start()
+        try:
+            full = await live.pin("NSE:RELIANCE")
+            await asyncio.sleep(0.3)
+            return live.quote(full)
+        finally:
+            await live.stop()
+
+    q = asyncio.run(run())
+    with session_factory() as s:
+        d = get_bars(s, resolve_symbol(s, "NSE:RELIANCE").id, TIMEFRAMES["1D"], limit=2)
+    assert abs(q["ltp"] - float(d.c[-1])) < 1e-6
+    assert abs(q["change"] - (d.c[-1] - d.c[-2])) < 1e-3                  # against the session before, not 0
