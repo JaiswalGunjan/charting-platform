@@ -62,7 +62,7 @@ un-tests.ps1 -SkipE2E # without the browser tests
 
 | Suite | Where | What it guards |
 |---|---|---|
-| Backend, pytest (288) | `backend/tests/` | data import (daily/hourly/names/CLI), every timeframe incl. US sessions and paging, all 50 indicators vs reference maths, formula language and its sandbox, live bars and WebSocket, alerts, watchlists, AI analyst (fake LLM), drawings API, chart patterns (parity with swingbt when present) |
+| Backend, pytest (304) | `backend/tests/` | data import (daily/hourly/names/CLI), every timeframe incl. US sessions and paging, all 50 indicators vs reference maths, formula language and its sandbox, live bars and WebSocket, alerts, watchlists, AI analyst (fake LLM), drawings API, chart patterns (parity with swingbt when present) |
 | Frontend unit, Vitest (71) | `frontend/tests/unit/` | date-range presets (incl. month-end clamping), time zones and DST, drawing geometry, time<->pixel mapping and hit-testing, indicator labels/styles, number formats |
 | Browser end-to-end, Playwright (24) | `frontend/tests/e2e/` | every user flow in a real browser: load, live ticks, symbol search, timeframe menu, ranges, theme, indicators and settings, custom formulas, drawing tools and saving, pattern menu and counts, alerts |
 
@@ -236,3 +236,23 @@ The app shows no "buy" / "sell" recommendations: a signal to enter is a **Breako
 uses become entry / exit words (e.g. "the entry price", "how the position exits"). Text that comes from the rulebook,
 the SwingScanner or the generated pattern rules is rewritten by `backend/app/wording.py` on its way to the screen
 (API answers and the restyled report); the source files are not changed.
+
+## Daily updates (scheduled)
+
+`scripts/daily_update.py --market NSE|US` runs from Windows Task Scheduler (register, change or remove both jobs with
+`scripts/register_daily_update.ps1 [-NseAt 18:30] [-UsAt 08:00] [-Remove]`):
+
+| Job | When (India time) | Session | Closed days skipped |
+|---|---|---|---|
+| Charting Lab - NSE daily update | weekdays 18:30 | today's NSE session | weekends, NSE trading holidays (NSE's own list from nseindia.com, cached per year in `backend/data/nse_holidays.json`) |
+| Charting Lab - US daily update | every day 08:00 | the New York session that closed overnight | New York weekends, US market holidays (NYSE rules, computed) |
+
+Each run downloads the day with the EOD downloader (`EOD_Market_Data/eod_downloader.py --exchanges NSE` or
+`NYSE NASDAQ`) until every day file (`market_data_daily/<EX>/bhavcopy_adjusted/<EX>_<YYYYMMDD>.csv`) exists: the first try
+starts a random 0-8 minutes late, then 5 retries ~5 minutes apart and 5 retries ~10 minutes apart (each wait +/-20% at
+random), then it gives up for the day. After a download it imports the day into Charting Lab, runs the setup scan(s)
+(NSE with `SwingScanner.exe --run-module swingbt.scan`; US from the scanner's source in `.tools/scanvenv`, as the 18 Nov
+exe fails on the US stub files) and drops their chart pages, then the pattern screens (daily and weekly).
+
+Logs: `backend/data/logs/daily_<market>_<date>.log`, the last result in `daily_<market>_status.json`. By hand:
+`python scripts/daily_update.py --market NSE [--date YYYY-MM-DD] [--dry-run]`.

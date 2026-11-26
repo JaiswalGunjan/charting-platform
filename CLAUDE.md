@@ -43,7 +43,7 @@ Lightweight Charts + FastAPI + PostgreSQL/TimescaleDB + Redis + Kite Connect:
 6. First AI feature: "explain this chart" from OHLCV + indicator context.
 
 ## Implementation status (24 Nov 2026)
-Milestones M1–M12 are built: backend (`backend/`, 288 pytest tests; 71 Vitest + 24 Playwright tests in `frontend/tests`) and frontend (`frontend/`,
+Milestones M1–M12 are built: backend (`backend/`, 304 pytest tests; 71 Vitest + 24 Playwright tests in `frontend/tests`) and frontend (`frontend/`,
 React 19 + Vite 7 + lightweight-charts 5.3, v5 `addSeries(XSeries, opts, paneIndex)` API).
 `run-demo.ps1` starts everything. See README.md for the milestone table and API overview.
 Node is a portable copy in `.tools/node` (gitignored); put it on PATH before running npm.
@@ -80,6 +80,10 @@ Lightweight Charts series primitive (`frontend/src/drawings.ts`), stored per sym
 live in `app/indicators/registry.py`. Custom indicators use a whitelisted-AST formula language
 (`app/indicators/formula.py`), the agreed first slice of our own scripting language (chosen by the
 owner 24 Nov 2026 over a no-code composer). Its syntax is still open to redesign.
+
+Daily jobs: `scripts/daily_update.py --market NSE|US` (Task Scheduler via `scripts/register_daily_update.ps1`: NSE weekdays
+18:30, US daily 08:00 India time); NSE holidays from nseindia.com, US holidays from NYSE rules; EOD downloader with
+random start + 5x~5 and 5x~10 minute retries, then import, setup scan and pattern screens.
 
 ## Tests
 `run-tests.ps1` runs backend pytest, frontend type check + Vitest and Playwright end-to-end (isolated seeded backend
