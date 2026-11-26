@@ -228,7 +228,11 @@ and is chosen by a setting in `.env` (a built-in name, or any class as `package.
 
 Minute bars live in PostgreSQL + TimescaleDB, the last 2 years (`BAR_STORES=1m=timescale`, `MINUTE_DATABASE_URL`;
 `run-demo.ps1` starts the local server; `python -m app.cli minute-store` shows its size and applies its compression
-and retention policies). How to write a replacement, what each interface promises, and the plan for 10–12 markets:
+and retention policies). US minute bars come from Alpaca (`scripts/alpaca_minute.py` downloads them as Parquet files
+into `EOD_Market_Data/market_data_minute/<EX>/`); `python -m app.cli import-minute --exchange NASDAQ` loads them:
+regular session only (09:30-16:00 New York), put on the basis of our daily bars (price / factor, volume x factor; the
+factor is Alpaca's official as-traded close / our daily close, exact between corporate actions), resumable (unchanged
+files are skipped, so it can run while the download is still going). How to write a replacement, what each interface promises, and the plan for 10–12 markets:
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 The tests plug in a fake of each (`backend/tests/test_m21_ports.py`) to prove the product works with it.
 

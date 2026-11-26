@@ -76,7 +76,10 @@ exchange). Markets are data: `backend/app/markets.toml` -> app/markets.py, GET /
 add exchange lists in code (adapters may name their own). WebSocket contract: docs/api/websocket.md. Minute bars
 (owner's decision 26 Nov 2026): PostgreSQL + TimescaleDB, last 2 years: BAR_STORES=1m=timescale,
 app/marketdata/minute_store.py (hypertable candles_1m, compression after 30 days, retention 730 days, older bars not
-written, own MINUTE_DATABASE_URL), `app.cli minute-store`; tests never touch it (conftest clears BAR_STORES before
+written, own MINUTE_DATABASE_URL), `app.cli minute-store`; US minutes imported from Alpaca Parquet (EOD_Market_Data/market_data_minute/<EX>, written by
+scripts/alpaca_minute.py, float or int64 micro-dollar layout with price_scale metadata) by `app.cli import-minute
+--exchange NASDAQ` (app/marketdata/alpaca_minute.py: regular session, factor = Alpaca official raw close / our daily
+close, resumable via <EX>/_imported.json); tests never touch it (conftest clears BAR_STORES before
 settings load: a session-wide seed once leaked test bars into the real table).
 SwingScanner (the setup scanner adapter, `backend/app/adapters/swingscanner/`): `core.py` reads the owner's scanner bundle
 (`SCANNER_DIR`: scans/*/signals.csv, near_misses.csv, market.json, portfolio.json) and proxies run/job to its local server

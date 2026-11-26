@@ -259,10 +259,11 @@ class MemoryBarStore:
     def times(self, session, exchange, tf, since):
         return sorted(t for t in self._times(exchange, tf) if t >= since)
 
-    def delete_bars(self, session, exchange, tfs, since=None, until=None):
+    def delete_bars(self, session, exchange, tfs, since=None, until=None, symbol_ids=None):
         lo, hi = since if since is not None else -2**62, until if until is not None else 2**62
         for (sid, tf), d in self.bars.items():
-            if tf in tfs and self.exchange_of.get(sid) == exchange.upper():
+            mine = sid in symbol_ids if symbol_ids is not None else self.exchange_of.get(sid) == exchange.upper()
+            if tf in tfs and mine:
                 for t in [t for t in d if lo <= t <= hi]:
                     del d[t]
 

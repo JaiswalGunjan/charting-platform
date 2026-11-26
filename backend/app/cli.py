@@ -12,6 +12,7 @@
     python -m app.cli import-eod --only hourly                                # just the 1h bars (EOD_HOURLY_DIR)
 """
 import argparse
+from pathlib import Path as _Path
 import time
 import logging
 import sys
@@ -25,6 +26,9 @@ from app.db import SessionLocal, init_db
 from app.marketdata.loader import get_source, load_history, resolve_symbol, upsert_symbols
 from app.models import Symbol
 
+
+# the EOD_Market_Data folder next to this project (minute and Alpaca stores)
+EOD_DEFAULT = _Path(__file__).resolve().parents[3] / "EOD_Market_Data"
 
 def cmd_init_db(_: argparse.Namespace) -> None:
     init_db()
@@ -120,6 +124,26 @@ def cmd_scanner_slim(args: argparse.Namespace) -> None:
             continue
         n, freed = sc.slim()
         print(f"{sc.title}: slimmed {n} scans, {freed / 1e6:,.0f} MB freed")
+
+
+def cmd_import_minute(args: argparse.Namespace) -> None:
+    """Alpaca 1-minute Parquet files -> the minute store, on our daily bars' basis (app/marketdata/alpaca_minute.py)."""
+    from pathlib import Path
+
+    from app.marketdata.alpaca_minute import import_exchange
+
+    eod = Path(args.eod_dir)
+    folder = Path(args.dir) if args.dir else eod / "market_data_minute" / args.exchange.upper()
+    daily = eod / "market_data_alpaca" / "daily"
+
+    def progress(r):
+        print(f"  {r.imported:,} imported ({r.bars:,} bars), {r.skipped_unchanged:,} unchanged, "
+              f"{len(r.not_ours)} not ours, {len(r.no_factor)} without daily bars", flush=True)
+
+    r = import_exchange(SessionLocal, folder, args.exchange, daily, limit=args.limit or None, progress=progress)
+    print(f"{r.exchange}: {r.imported:,} of {r.files:,} files imported, {r.bars:,} minute bars in {r.seconds}s; "
+          f"{r.skipped_unchanged:,} unchanged since the last import; {len(r.not_ours)} not our symbols "
+          f"{r.not_ours[:5]}; {len(r.no_factor)} without daily bars {r.no_factor[:5]}")
 
 
 def cmd_minute_store(args: argparse.Namespace) -> None:
@@ -225,6 +249,13 @@ def main(argv: list[str] | None = None) -> None:
     un.add_argument("--refresh-names", action="store_true", help="re-download the listing files")
     un.set_defaults(fn=cmd_update_names)
     sub.add_parser("kite-login").set_defaults(fn=cmd_kite_login)
+    im = sub.add_parser("import-minute", help="Alpaca 1-minute Parquet files -> the minute store (BAR_STORES=1m=...)")
+    im.add_argument("--exchange", required=True, help="NASDAQ or NYSE")
+    im.add_argument("--eod-dir", default=str(EOD_DEFAULT),
+                    help="the EOD_Market_Data folder (market_data_minute/, market_data_alpaca/daily/)")
+    im.add_argument("--dir", default="", help="the exchange's Parquet folder (default: <eod-dir>/market_data_minute/<EX>)")
+    im.add_argument("--limit", type=int, default=0, help="only the first N files to import (a test run)")
+    im.set_defaults(fn=cmd_import_minute)
     ms = sub.add_parser("minute-store", help="minute bars in TimescaleDB: set up, size, policies (BAR_STORES=1m=timescale)")
     ms.add_argument("--compress", action="store_true", help="compress the chunks past the window now")
     ms.add_argument("--prune", action="store_true", help="drop the chunks older than MINUTE_RETENTION_DAYS now")

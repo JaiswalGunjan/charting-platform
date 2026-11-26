@@ -135,7 +135,8 @@ class BarStore(Protocol):
                          data: dict) -> int:
         """Bulk load: drop the exchange's bars of `drop_tfs`, store `data` (ts, o, h, l, c, v arrays) as `tf`."""
     def delete_bars(self, session: Any, exchange: str, tfs: Sequence[str], since: int | None = None,
-                    until: int | None = None) -> None:
-        """Drop the exchange's bars of `tfs` in [since, until] (re-importing a range, e.g. after a split)."""
+                    until: int | None = None, symbol_ids: Sequence[int] | None = None) -> None:
+        """Drop the exchange's bars of `tfs` in [since, until] (re-importing a range, e.g. after a split); with
+        `symbol_ids`, only those symbols' bars."""
     def append(self, session: Any, tf: str, symbol_ids: Any, data: dict) -> int:
         """Bulk insert of bars not stored yet (the chunked import path: an exchange-month at a time)."""

@@ -155,7 +155,17 @@ What follows from this:
    - bars older than the window are not written at all;
    - it has its own connection (`MINUTE_DATABASE_URL`), so the main database can stay SQLite.
 
-   At 2 years that is about 6–8 billion rows for 12 markets, roughly 0.3–0.4 TB compressed. Maintenance:
+   At 2 years that is about 6–8 billion rows for 12 markets, roughly 0.3–0.4 TB compressed.
+   US minute bars come from Alpaca's Parquet files (`app/marketdata/alpaca_minute.py`, `app.cli import-minute`):
+   - regular session only (09:30–16:00 New York);
+   - put on our daily bars' basis by a per-day factor: Alpaca's official as-traded close / our close, which is exact
+     between corporate actions; after the daily file's last day, the factor carries on and changes only on a
+     sustained, self-consistent jump of more than 8% over 3 days (a split);
+   - resumable, as it records each file it imported.
+   Checked on 20 NASDAQ symbols: the day's last minute close matches our daily close (median gap 0–0.3%, last trade
+   against the official close), and liquid names match the stored hourly bars in 99%+ of hours. Thin names match in
+   about 85% of hours, because Alpaca's 30-minute bars (our hourly bars' source) count trades the 1-minute bars do
+   not. Maintenance:
    `python -m app.cli minute-store [--compress] [--prune]` (the policies also run on their own while the server is
    up). If 10 years of minute bars are wanted later, a ClickHouse store is one more adapter behind the same
    `BAR_STORES` setting; tests: `backend/tests/test_m24_minute_store.py` (needs `TEST_PG_URL`).

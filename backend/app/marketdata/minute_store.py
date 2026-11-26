@@ -216,10 +216,10 @@ class TimescaleMinuteStore:
         return sorted(int(t) for t in ts)
 
     def delete_bars(self, session, exchange: str, tfs: Sequence[str], since: int | None = None,
-                    until: int | None = None) -> None:
+                    until: int | None = None, symbol_ids: Sequence[int] | None = None) -> None:
         if "1m" not in tfs:
             return
-        ids = self._ids(session, exchange)
+        ids = list(symbol_ids) if symbol_ids is not None else self._ids(session, exchange)
         if not ids:
             return
         self.ensure_schema()
@@ -237,14 +237,19 @@ class TimescaleMinuteStore:
         self.ensure_schema()
         sid, data = self._keep(symbol_ids, data)
         n = len(sid)
-        with self.engine.begin() as c:
-            for i in range(0, n, 20_000):
-                sl = slice(i, i + 20_000)
-                c.execute(candles_1m.insert(), [
-                    {"symbol_id": int(s), "ts": int(t), "o": float(o), "h": float(h), "l": float(l), "c": float(cc),
-                     "v": float(v), "oi": None}
-                    for s, t, o, h, l, cc, v in zip(sid[sl], data["ts"][sl], data["o"][sl], data["h"][sl],  # noqa: E741
-                                                    data["l"][sl], data["c"][sl], data["v"][sl])])
+        if not n:
+            return 0
+        cols = [np.asarray(sid, np.int64), np.asarray(data["ts"], np.int64)] + \
+            [np.asarray(data[k], float) for k in ("o", "h", "l", "c", "v")]
+        raw = self.engine.raw_connection()                     # COPY: the fast path for millions of bars
+        try:
+            cur = raw.cursor()
+            with cur.copy("COPY candles_1m (symbol_id, ts, o, h, l, c, v) FROM STDIN") as cp:
+                for row in zip(*(a.tolist() for a in cols)):
+                    cp.write_row(row)
+            raw.commit()
+        finally:
+            raw.close()
         return n
 
     def replace_exchange(self, session, exchange: str, drop_tfs: Sequence[str], tf: str, symbol_ids, data: dict) -> int:

@@ -118,9 +118,11 @@ class SqlBarStore:
         return sorted(int(t) for t in ts)
 
     def delete_bars(self, session: Session, exchange: str, tfs: Sequence[str], since: int | None = None,
-                    until: int | None = None) -> None:
-        """Delete the exchange's bars of `tfs` with time in [since, until] (None = open-ended); commits."""
-        cond = [_of_exchange(exchange), Candle.tf.in_(tuple(tfs))]
+                    until: int | None = None, symbol_ids: Sequence[int] | None = None) -> None:
+        """Delete the exchange's bars of `tfs` with time in [since, until] (None = open-ended), or only those of
+        `symbol_ids`; commits."""
+        cond = [Candle.symbol_id.in_(list(symbol_ids)) if symbol_ids is not None else _of_exchange(exchange),
+                Candle.tf.in_(tuple(tfs))]
         if since is not None:
             cond.append(Candle.ts >= since)
         if until is not None:
@@ -192,9 +194,9 @@ class RoutedBarStore:
             groups.setdefault(id(st), (st, []))[1].append(tf)
         return groups.values()
 
-    def delete_bars(self, session, exchange, tfs, since=None, until=None):
+    def delete_bars(self, session, exchange, tfs, since=None, until=None, symbol_ids=None):
         for st, mine in self._by_store(tfs):
-            st.delete_bars(session, exchange, mine, since, until)
+            st.delete_bars(session, exchange, mine, since, until, symbol_ids=symbol_ids)
 
     def append(self, session, tf, symbol_ids, data):
         return self.store_for(tf).append(session, tf, symbol_ids, data)
