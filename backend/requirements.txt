@@ -8,8 +8,8 @@ kiteconnect>=5.0
 redis>=5.0
 anthropic>=2.12
 tzdata>=2024.1   # IANA zones for zoneinfo on Windows (US session times)
-# Postgres driver (only needed when DATABASE_URL points at Postgres/TimescaleDB)
-# psycopg[binary]>=3.2
+# Postgres driver (only needed when DATABASE_URL points at Postgres/TimescaleDB; used by the local trial)
+# psycopg[binary]>=3.2   (installed in .venv: 3.3.9)
 
 # dev
 pytest>=8

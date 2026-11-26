@@ -119,6 +119,7 @@ export interface ScannerSignal {
   risk: number | null;   // entry - stop, per share
   buy: boolean;          // valid and a breakout (the scanner's "would buy" status)
   size_mult: number | null;  // setup multiplier used in sizing
+  setups?: string[];         // every setup that formed on the stock that day: its own first, then the others
   name?: string;             // company name from our symbol list ("" when unknown)
   pattern: string;       // matching chart pattern id, "" if none
   valid: boolean;

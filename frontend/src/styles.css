@@ -324,7 +324,9 @@ table.funcs td { padding: 2px 6px 2px 0; vertical-align: top; }
 .today-body { overflow: auto; flex: 1; padding: 0 14px 14px; }
 .today-selection { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 10px 0; position: sticky; top: 0; z-index: 2;
   background: var(--bg); border-bottom: 1px solid var(--border); }
-.today-sections { display: grid; grid-template-columns: repeat(auto-fit, minmax(290px, 1fr)); gap: 10px; padding: 10px 0; }
+/* all categories in one row (one column each); a narrow window wraps them instead */
+.today-sections { display: grid; grid-template-columns: repeat(var(--cols, 5), minmax(0, 1fr)); gap: 10px; padding: 10px 0; }
+@media (max-width: 1100px) { .today-sections { grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); } }
 .today-section { border: 1px solid var(--border); border-radius: 8px; background: var(--panel); padding: 8px; display: flex; flex-direction: column; gap: 4px; }
 .today-section h3 { margin: 0 0 4px; font-size: 12px; text-transform: uppercase; letter-spacing: .6px; color: var(--muted); }
 .pcard { display: grid; grid-template-columns: auto auto 1fr auto; gap: 8px; align-items: start; padding: 6px; border-radius: 6px; cursor: pointer; border: 1px solid transparent; }
@@ -464,3 +466,7 @@ a.brand { text-decoration: none; }
 /* Pattern Screener: HTQ (highest turnover in a quarter) */
 .htq { display: inline-block; margin-left: 6px; padding: 0 5px; border-radius: 4px; font-size: 10px; font-weight: 700;
   line-height: 16px; background: #0b7a4b; color: #fff; vertical-align: 1px; }
+
+/* Setup Screener: the other setups that formed on the same day (+PP); a chip with nothing left is greyed out */
+.scan-table .tag.also { margin-left: 3px; opacity: .75; border-style: dashed; }
+.scanner .setup-filter .chip:disabled { opacity: .4; cursor: default; }

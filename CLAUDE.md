@@ -29,9 +29,8 @@ observability).
 - Product/quant/AI services: Python (FastAPI).
 - Kafka as the tick bus; ClickHouse for ticks/candles; PostgreSQL for product data;
   Redis for live quotes and forming bars.
-- Data: Zerodha Kite Connect (₹500/month, live + historical) for private prototyping
-  ONLY — its data may not be redistributed. Public launch needs an NSE/BSE-authorised
-  data vendor licence; US data via Massive (formerly Polygon.io).
+- Data: Zerodha Kite Connect (₹500/month, live + historical); US data via Massive
+  (formerly Polygon.io).
 
 ## Suggested first milestone (private prototype, 6–8 weeks)
 Lightweight Charts + FastAPI + PostgreSQL/TimescaleDB + Redis + Kite Connect:
@@ -43,7 +42,7 @@ Lightweight Charts + FastAPI + PostgreSQL/TimescaleDB + Redis + Kite Connect:
 6. First AI feature: "explain this chart" from OHLCV + indicator context.
 
 ## Implementation status (24 Nov 2026)
-Milestones M1–M12 are built: backend (`backend/`, 304 pytest tests; 71 Vitest + 24 Playwright tests in `frontend/tests`) and frontend (`frontend/`,
+Milestones M1–M12 are built: backend (`backend/`, 306 pytest tests; 71 Vitest + 24 Playwright tests in `frontend/tests`) and frontend (`frontend/`,
 React 19 + Vite 7 + lightweight-charts 5.3, v5 `addSeries(XSeries, opts, paneIndex)` API).
 `run-demo.ps1` starts everything. See README.md for the milestone table and API overview.
 Node is a portable copy in `.tools/node` (gitignored); put it on PATH before running npm.
@@ -84,6 +83,10 @@ owner 24 Nov 2026 over a no-code composer). Its syntax is still open to redesign
 Daily jobs: `scripts/daily_update.py --market NSE|US` (Task Scheduler via `scripts/register_daily_update.ps1`: NSE weekdays
 18:30, US daily 08:00 India time); NSE holidays from nseindia.com, US holidays from NYSE rules; EOD downloader with
 random start + 5x~5 and 5x~10 minute retries, then import, setup scan and pattern screens.
+
+PostgreSQL trial: portable PostgreSQL 18.7 + TimescaleDB 2.32.1 in `.tools/pgsql` (`scripts/pg_local.ps1`, port 5433;
+TimescaleDB's Windows build needs the matching minor release: 2.32.1 failed on 18.6, works on 18.7); copy with
+`scripts/sqlite_to_postgres.py`; `TEST_PG_URL` runs the backend tests on it. Not the app's default (SQLite).
 
 ## Tests
 `run-tests.ps1` runs backend pytest, frontend type check + Vitest and Playwright end-to-end (isolated seeded backend

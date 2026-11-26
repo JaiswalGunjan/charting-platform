@@ -130,9 +130,22 @@ def test_waits_are_random_not_fixed(job):
 
 
 # ---------------------------------------------------------------- after the download
+def _fake_run(job, calls, save=True):
+    """A stand-in for run(): records the call; a setup scan saves that day's scan when `save`."""
+    def run(cmd, cwd, name, timeout=0, env=None):
+        calls.append((name, cmd, env))
+        if save and name.startswith("setup scan"):
+            ex = name.split()[-1]
+            out = job.SCANNER / "scans" / f"{ex}_daily_{DAY:%Y-%m-%d}"
+            out.mkdir(parents=True, exist_ok=True)
+            (out / "signals.csv").write_text("x")
+        return True
+    return run
+
+
 def test_after_the_download_setup_scan_then_pattern_screen(job, monkeypatch):
     calls = []
-    monkeypatch.setattr(job, "run", lambda cmd, cwd, name, timeout=0, env=None: calls.append((name, cmd, env)) or True)
+    monkeypatch.setattr(job, "run", _fake_run(job, calls))
     steps = job.after_download(job.MARKETS[US], DAY, dry=False)
     names = [c[0] for c in calls]
     assert names == ["import NYSE,NASDAQ into Charting Lab", "setup scan NYSE", "setup scan NASDAQ",
@@ -142,8 +155,20 @@ def test_after_the_download_setup_scan_then_pattern_screen(job, monkeypatch):
     if job.SCAN_PY.is_file():                                               # US scans run from the scanner's source
         assert "swingbt.scan" in [str(x) for x in scan_cmd] and calls[1][2]["SWINGBT_CONFIG"].endswith("swingbt_config.ini")
     calls.clear()
-    job.after_download(job.MARKETS[NSE], DAY, dry=False)                    # NSE scans with SwingScanner.exe
+    job.after_download(job.MARKETS[NSE], DAY, dry=False)                    # NSE scans with SwingScanner.exe,
     assert str(calls[1][1][0]).endswith("SwingScanner.exe")
+    assert "--refresh" in [str(x) for x in calls[1][1]]                     # its own NSE copy refreshed first
+
+
+def test_a_scan_that_saved_nothing_for_the_day_is_an_error(job, monkeypatch):
+    """26 Nov: the scanner exited normally but scanned the day before (its NSE copy lagged): not a success."""
+    calls = []
+    monkeypatch.setattr(job, "run", _fake_run(job, calls, save=False))
+    steps = job.after_download(job.MARKETS[NSE], DAY, dry=False)
+    assert steps["setup_scan"] is False and steps["pattern_screen"] is True   # the screens still run
+    monkeypatch.setattr(job, "download", lambda *a, **k: True)
+    assert job.main(["--market", "NSE", "--date", "2026-11-26"]) == 1
+    assert json.loads((job.LOGS / "daily_nse_status.json").read_text())["result"] == "done with errors"
 
 
 def test_a_saved_scan_is_not_run_again(job, monkeypatch):

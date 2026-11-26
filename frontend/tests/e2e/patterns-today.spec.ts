@@ -31,6 +31,10 @@ test("patterns today: saved screen, AND filter with clear, category sections, so
   // one section per category, each pattern with a description
   const sections = dash.locator(".today-section h3");
   await expect(sections).toContainText(["Volume signals", "Price cycle", "Bases", "Shapers", "Breakouts & pullbacks"]);
+  // all the category tiles in a single row
+  const tops = await dash.locator(".today-section").evaluateAll((els) => els.map((e) => Math.round(e.getBoundingClientRect().top)));
+  expect(tops.length).toBe(5);
+  expect(new Set(tops).size).toBe(1);
   await expect(dash.locator(".pcard").filter({ has: page.locator("b", { hasText: /^Pocket pivot$/ }) }))
     .toContainText("volume beats every down day");
 

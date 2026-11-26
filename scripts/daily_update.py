@@ -231,10 +231,18 @@ def scan(market: Market, exchange: str, day: dt.date) -> bool:
         log.info("setup scan %s %s is already saved", exchange, day)
         return True
     if market.scan_with_source and SCAN_PY.is_file():
-        return run([SCAN_PY, "-m", "swingbt.scan", "--market", exchange, "--date", day.isoformat(), "--out", out],
-                   SCANNER_SRC, f"setup scan {exchange}", env={"SWINGBT_CONFIG": str(SCANNER / "swingbt_config.ini")})
-    return run([SCANNER / "SwingScanner.exe", "--run-module", "swingbt.scan", "--market", exchange,
-                "--date", day.isoformat(), "--offline"], SCANNER, f"setup scan {exchange}")
+        run([SCAN_PY, "-m", "swingbt.scan", "--market", exchange, "--date", day.isoformat(), "--out", out],
+            SCANNER_SRC, f"setup scan {exchange}", env={"SWINGBT_CONFIG": str(SCANNER / "swingbt_config.ini")})
+    else:
+        # --refresh first rebuilds the scanner's own NSE copy (it lags the downloaded files by a day otherwise, and the
+        # scan then silently covers the day before)
+        run([SCANNER / "SwingScanner.exe", "--run-module", "swingbt.scan", "--market", exchange, "--refresh", "--yes",
+             "--date", day.isoformat(), "--offline"], SCANNER, f"setup scan {exchange}")
+    # done only when that day's scan is saved (the scanner exits normally after scanning an earlier day too)
+    if (out / "signals.csv").is_file():
+        return True
+    log.error("setup scan %s %s: no scan of that day was saved", exchange, day)
+    return False
 
 
 def after_download(market: Market, day: dt.date, dry: bool) -> dict:

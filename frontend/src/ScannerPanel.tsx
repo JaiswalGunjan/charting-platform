@@ -83,7 +83,10 @@ export default function ScannerPanel(props: {
   const [job, setJob] = useState<{ state: string; line: string; hint?: string } | null>(null);
   const polling = useRef<number | null>(null);
   const [why, setWhy] = useState<SignalExplanation | null>(null);
-  const [setupFilter, setSetupFilter] = useState<string | null>(null);
+  // setups ticked in the filter row ([] = all); a row is shown when its setup is one of them
+  const [setupFilter, setSetupFilter] = useState<string[]>([]);
+  const toggleSetup = (code: string) =>
+    setSetupFilter((f) => (f.includes(code) ? f.filter((x) => x !== code) : [...f, code]));
   const [whyErr, setWhyErr] = useState("");
   const [q, setQ] = useState("");                       // search: symbol or company
   const whyRef = useRef<HTMLDivElement>(null);
@@ -167,7 +170,7 @@ export default function ScannerPanel(props: {
     }
     setScan(null);
     setWhy(null);
-    setSetupFilter(null);
+    setSetupFilter([]);
     setPicked(null);
     api.scannerScan(scanId).then((s) => {
       setScan(s);
@@ -240,13 +243,20 @@ export default function ScannerPanel(props: {
   // breakouts: highest priority score first (signals without a score last)
   const viewRows: ScannerSignal[] = !scan ? [] : view === "buy" ? [...scan.signals].sort(byScore) : scan.near_misses;
   const ql = q.trim().toLowerCase();
-  const rows = viewRows.filter((r) => (!setupFilter || r.setup === setupFilter) &&
+  // AND: a stock is shown only if every ticked setup formed on it that day (its own setup or one of the others)
+  const setupsOf = (r: ScannerSignal) => r.setups ?? [r.setup];
+  const rows = viewRows.filter((r) => setupFilter.every((c) => setupsOf(r).includes(c)) &&
     (!ql || r.ticker.toLowerCase().includes(ql) || (r.name ?? "").toLowerCase().includes(ql)));
-  // setups in the open tab, most signals first: the filter chips above the table
-  const setupCounts = Object.entries(viewRows.reduce<Record<string, number>>((acc, r) => {
-    acc[r.setup] = (acc[r.setup] ?? 0) + 1;
+  // the filter chips: every setup in the open tab, most stocks first; each count = the stocks that would remain if
+  // that chip were ticked as well (its own count when ticked)
+  const allCounts = viewRows.reduce<Record<string, number>>((acc, r) => {
+    for (const c of setupsOf(r)) acc[c] = (acc[c] ?? 0) + 1;
     return acc;
-  }, {})).sort((x, y) => y[1] - x[1] || x[0].localeCompare(y[0]));
+  }, {});
+  const setupCounts = Object.keys(allCounts)
+    .map((code) => [code, viewRows.filter((r) => setupFilter.filter((x) => x !== code).concat(code)
+      .every((c) => setupsOf(r).includes(c))).length] as [string, number])
+    .sort((x, y) => allCounts[y[0]] - allCounts[x[0]] || x[0].localeCompare(y[0]));
   const count = (v: View) => (!scan ? 0 : v === "buy" ? scan.signals.length : scan.near_misses.length);
   const budget = scan ? equity * (riskPct / 100) * riskMult : 0;
   const ncols = view === "buy" ? 6 : 5;
@@ -372,7 +382,7 @@ export default function ScannerPanel(props: {
 
           <nav className="tabs inline seg scan-views">
             {(Object.keys(VIEW_LABEL) as View[]).map((v) => (
-              <button key={v} className={view === v ? "active" : ""} onClick={() => { setView(v); setSetupFilter(null); }}>
+              <button key={v} className={view === v ? "active" : ""} onClick={() => { setView(v); setSetupFilter([]); }}>
                 {VIEW_LABEL[v]} <span className="seg-count">{count(v)}</span>
               </button>
             ))}
@@ -384,19 +394,24 @@ export default function ScannerPanel(props: {
           {setupCounts.length > 0 && (
             <div className="setup-filter" role="group" aria-label="Filter by setup">
               <span className="muted small">Setup:</span>
-              <button className={`chip${setupFilter ? "" : " on"}`} onClick={() => setSetupFilter(null)}>
+              <button className={`chip${setupFilter.length ? "" : " on"}`} onClick={() => setSetupFilter([])}
+                title="All setups (clears the selection)">
                 All <span className="muted">{viewRows.length}</span>
               </button>
               {setupCounts.map(([code, n]) => {
                 const info = scan.setups[code];
                 return (
-                  <button key={code} className={`chip${setupFilter === code ? " on" : ""}`}
-                    onClick={() => setSetupFilter(setupFilter === code ? null : code)}
+                  <button key={code} className={`chip${setupFilter.includes(code) ? " on" : ""}`}
+                    aria-pressed={setupFilter.includes(code)} onClick={() => toggleSetup(code)}
+                    disabled={!n && !setupFilter.includes(code)}
                     title={[info?.name ?? code, info?.what].filter(Boolean).join(": ")}>
                     {code} <span className="muted">{n}</span>
                   </button>
                 );
               })}
+              {setupFilter.length > 1 && (
+                <span className="muted small">{rows.length} of {viewRows.length} with all of {setupFilter.join(" + ")}</span>
+              )}
             </div>
           )}
           </div>
@@ -424,6 +439,9 @@ export default function ScannerPanel(props: {
                     <a className="scan-sym" href={signalUrl(scanId, s)} target="charting-lab" title={`Open the ${s.ticker} chart`}
                       onClick={(e) => e.stopPropagation()}>{s.ticker}</a>{" "}
                     <span className="tag" title={s.setup_name}>{s.setup}</span>
+                    {setupsOf(s).slice(1).map((c) => (
+                      <span key={c} className="tag also" title={`${scan.setups[c]?.name ?? c} formed on the same day`}>+{c}</span>
+                    ))}
                     {s.name && <div className="scan-name small">{s.name}</div>}
                     <div className="muted small">{view === "near" ? firstRule(s.reject || s.weak) : s.status || s.setup_name}</div>
                   </td>

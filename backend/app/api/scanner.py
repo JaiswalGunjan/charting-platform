@@ -177,6 +177,11 @@ def _rows(path: Path, market: str) -> list[dict]:
             row["ticker"] = r.get("symbol", "")
             row["symbol"] = f"{market}:{r.get('symbol', '')}"
             row["pattern"] = SETUP_PATTERN.get(row["setup"], "")
+            # every setup that formed on this stock that day: its own, then the others the scanner lists
+            # (breakouts: "also" = "PP, NAT_REACTION"; near misses: "other_setups" = "PP (S8-R003), MINICOIL (...)")
+            others = (r.get("also") or "") + "," + (r.get("other_setups") or "")
+            codes = [c.strip().split(" ")[0].split("(")[0].strip() for c in others.split(",")]
+            row["setups"] = list(dict.fromkeys([row["setup"]] + [c for c in codes if c and c != row["setup"]]))
             # the scanner's trade plan: entry = the signal-day close, stop tested from the next session
             row["entry"] = row["close"]
             row["risk"] = round(row["close"] - row["stop"], 4) if row["close"] is not None and row["stop"] is not None                 else None

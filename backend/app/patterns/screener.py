@@ -134,9 +134,14 @@ def resolve_session(session_factory: sessionmaker, exchange: str, day: str | Non
     """The trading date a screen of `day` would use: the last session on or before it (default: the latest)."""
     with session_factory() as s:
         cond = [Candle.tf == "1D", Candle.symbol_id.in_(select(Symbol.id).where(Symbol.exchange == exchange.upper()))]
+        upto = session_ts(day) if day else int(time.time())
         if day:
-            cond.append(Candle.ts <= session_ts(day))
-        ts = s.scalar(select(func.max(Candle.ts)).where(*cond))
+            cond.append(Candle.ts <= upto)
+        # look in the last 40 days first: a bounded range reads only the newest chunks (TimescaleDB) / index pages;
+        # the whole history only when nothing is that recent
+        ts = s.scalar(select(func.max(Candle.ts)).where(*cond, Candle.ts >= upto - 40 * DAY))
+        if ts is None:
+            ts = s.scalar(select(func.max(Candle.ts)).where(*cond))
     return session_date(ts) if ts is not None else None
 
 

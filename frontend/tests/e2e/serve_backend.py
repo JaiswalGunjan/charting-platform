@@ -16,13 +16,13 @@ scanner = tmp / "SwingScanner"
 day = scanner / "scans" / "NSE_daily_2026-11-23"
 day.mkdir(parents=True)
 (scanner / "swingbt_config.ini").write_text("[app]\nscans = scans\n")
-COLS = "date,symbol,setup,valid,close,stop,stop_pct,stop_note,score,stage,phase,base_len,reject,weak,notes,rank,status,shares,value,chart\n"
+COLS = "date,symbol,setup,valid,close,stop,stop_pct,stop_note,score,stage,phase,base_len,reject,weak,notes,rank,status,shares,value,chart,also\n"
 (day / "signals.csv").write_text(
     COLS + "2026-11-23,TCS,BBR,True,2400,2328,3.0,below the low,9.8,2,base,6,,,"
-           "Bad break recovery: reclaimed the SMA50,1,would buy,10,24000,charts/TCS_BBR.html\n"
+           "Bad break recovery: reclaimed the SMA50,1,would buy,10,24000,charts/TCS_BBR.html,PP\n"   # PP formed too
            # ranked 2nd by the scanner but with the higher score: the panel lists it first
            "2026-11-23,WIPRO,PP,True,500,485,3.0,below the low,9.95,2,base,4,,,"
-           "Pocket pivot: volume above every down day,2,would buy,40,20000,\n")
+           "Pocket pivot: volume above every down day,2,would buy,40,20000,,\n")
 (day / "near_misses.csv").write_text(
     COLS + "2026-11-23,INFY,VCP,False,1500,1450,3.3,below the low,9.1,2,base,20,"
            "S8-R003: no ATR contraction,,VCP almost,,,0,0,\n")

@@ -139,13 +139,30 @@ test("setup screener: breakouts with entry / SL / qty, near misses, setup filter
   // no buy / sell words anywhere on the page (SEBI)
   expect(await panel.innerText()).not.toMatch(/\b(buy|buys|buying|bought|sell|sells|selling|sold)\b/i);
   const chips = panel.getByRole("group", { name: "Filter by setup" }).getByRole("button");
-  await expect(chips).toHaveText([/All\s*2/, /BBR\s*1/, /PP\s*1/]);
+  await expect(chips).toHaveText([/All\s*2/, /PP\s*2/, /BBR\s*1/]);     // PP: WIPRO's own, and with TCS
   await expect(chips.filter({ hasText: "BBR" })).toHaveAttribute("title", /Bad break recovery/);
-  await chips.filter({ hasText: "PP" }).click();
-  await expect(panel.locator(".scan-table tbody tr:not(.why-row)")).toHaveCount(1);
-  await expect(panel.locator(".scan-table tbody tr:not(.why-row)")).toContainText("WIPRO");
-  await chips.filter({ hasText: "PP" }).click();
-  await expect(panel.locator(".scan-table tbody tr:not(.why-row)")).toHaveCount(2);
+  const tableRows = panel.locator(".scan-table tbody tr:not(.why-row)");
+  const pp = chips.filter({ hasText: "PP" }), bbr = chips.filter({ hasText: "BBR" }), all = chips.filter({ hasText: "All" });
+  // TCS is a BBR breakout with PP on the same day; WIPRO is a PP breakout. Its other setups show as "+PP"
+  await expect(panel.locator(".scan-table tbody tr", { hasText: "TCS" }).locator(".tag.also")).toHaveText("+PP");
+  await pp.click();                                                         // PP: its own or on the same day
+  await expect(tableRows).toHaveCount(2);
+  await expect(pp).toHaveAttribute("aria-pressed", "true");
+  await expect(chips).toHaveText([/All\s*2/, /PP\s*2/, /BBR\s*1/]);         // ticking BBR as well would leave 1
+  await bbr.click();                                                        // AND: stocks with both PP and BBR
+  await expect(tableRows).toHaveCount(1);
+  await expect(tableRows).toContainText("TCS");
+  await expect(pp).toHaveClass(/on/);
+  await expect(bbr).toHaveClass(/on/);
+  await expect(all).not.toHaveClass(/on/);
+  await expect(panel.locator(".setup-filter")).toContainText("1 of 2 with all of PP + BBR");
+  await pp.click();                                                         // untick PP: BBR alone
+  await expect(tableRows).toHaveCount(1);
+  await expect(tableRows).toContainText("TCS");
+  await all.click();                                                        // All clears the selection
+  await expect(tableRows).toHaveCount(2);
+  await expect(all).toHaveClass(/on/);
+  await expect(bbr).not.toHaveClass(/on/);
 
   // near misses show why they failed; opening one shows it on the chart as a near miss
   await panel.locator(".scan-views button", { hasText: "Near misses" }).click();

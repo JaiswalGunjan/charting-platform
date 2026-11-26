@@ -21,10 +21,27 @@ MINUTE_START = date(2026, 11, 9)
 DAILY_START = date(2025, 11, 20)
 
 
+def _test_engine(tmp_path_factory):
+    """SQLite in a temp folder; or, with TEST_PG_URL (e.g. postgresql+psycopg://charting@127.0.0.1:5433/postgres), a
+    fresh PostgreSQL database `charting_test` on that server (dropped and created again for every run)."""
+    import os
+
+    pg = os.environ.get("TEST_PG_URL")
+    if not pg:
+        return make_engine(f"sqlite:///{(tmp_path_factory.mktemp('db') / 'test.db').as_posix()}")
+    from sqlalchemy import create_engine, text
+
+    admin = create_engine(pg, isolation_level="AUTOCOMMIT")
+    with admin.connect() as c:
+        c.execute(text("DROP DATABASE IF EXISTS charting_test WITH (FORCE)"))
+        c.execute(text("CREATE DATABASE charting_test"))
+    admin.dispose()
+    return make_engine(pg.rsplit("/", 1)[0] + "/charting_test")
+
+
 @pytest.fixture(scope="session")
 def session_factory(tmp_path_factory):
-    db = tmp_path_factory.mktemp("db") / "test.db"
-    engine = make_engine(f"sqlite:///{db.as_posix()}")
+    engine = _test_engine(tmp_path_factory)
     init_db(engine)
     factory = sessionmaker(bind=engine, expire_on_commit=False)
     src = SyntheticSource()

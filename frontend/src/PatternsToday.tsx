@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { api, ApiError, type PatternMeta, type PatternsToday as Screen, type TodayRow } from "./api";
 import { fmt } from "./format";
 import { liquidRows, matchRows, nextSort, patternCounts, sortRows, turnoverText, type Sort, type SortKey } from "./todayLogic";
@@ -205,7 +205,7 @@ export default function PatternsToday(props: {
             <button className="small" disabled={!sel.size} onClick={() => setSelected([])}>Clear selection</button>
           </div>
 
-          <div className="today-sections">
+          <div className="today-sections" style={{ "--cols": groups.length } as CSSProperties}>
             {groups.map((g) => {
               const ms = metas.filter((m) => m.group === g);
               const n = ms.filter((m) => sel.has(m.id)).length;

@@ -62,7 +62,7 @@ un-tests.ps1 -SkipE2E # without the browser tests
 
 | Suite | Where | What it guards |
 |---|---|---|
-| Backend, pytest (304) | `backend/tests/` | data import (daily/hourly/names/CLI), every timeframe incl. US sessions and paging, all 50 indicators vs reference maths, formula language and its sandbox, live bars and WebSocket, alerts, watchlists, AI analyst (fake LLM), drawings API, chart patterns (parity with swingbt when present) |
+| Backend, pytest (306) | `backend/tests/` | data import (daily/hourly/names/CLI), every timeframe incl. US sessions and paging, all 50 indicators vs reference maths, formula language and its sandbox, live bars and WebSocket, alerts, watchlists, AI analyst (fake LLM), drawings API, chart patterns (parity with swingbt when present) |
 | Frontend unit, Vitest (71) | `frontend/tests/unit/` | date-range presets (incl. month-end clamping), time zones and DST, drawing geometry, time<->pixel mapping and hit-testing, indicator labels/styles, number formats |
 | Browser end-to-end, Playwright (24) | `frontend/tests/e2e/` | every user flow in a real browser: load, live ticks, symbol search, timeframe menu, ranges, theme, indicators and settings, custom formulas, drawing tools and saving, pattern menu and counts, alerts |
 
@@ -104,7 +104,7 @@ plus `tickers.csv` for BSE (`python -m app.cli update-names` refreshes them). US
 New York session times (09:30, DST-aware) and are shown in New York time. Daily bars of every
 exchange are dated by their own trading date.
 
-**Kite Connect** (private prototyping only — its data may not be redistributed):
+**Kite Connect**:
 set `KITE_API_KEY`/`KITE_API_SECRET`, run `python -m app.cli kite-login` each morning
 for `KITE_ACCESS_TOKEN`, then `python -m app.cli load-symbols` and `load-candles`.
 
@@ -174,7 +174,8 @@ the buy signals with entry (the signal day's close), SL and a quantity sized for
 default 10; NYSE/NASDAQ in dollars, default $100,000) and your risk per trade (default 1%), plus near misses (with the hard rule that failed). Each row shows the company name; the symbol is a link to its chart (Entry / SL lines, the setup's pattern on).
 Clicking a row opens its "why this trade" summary right under it (click again to close); it starts with the setup
 itself (the scanner's own `explain.py` text, read as data). A search box (symbol or company) and setup chips filter
-the table. When the market rule stops new entries (index impulse (-,-), a strong bear regime, or the index
+the table; several ticked setups match with AND (every ticked setup formed on the stock that day: its own, or one the scanner lists
+with it, shown as "+PP" tags). When the market rule stops new entries (index impulse (-,-), a strong bear regime, or the index
 below its 10-day low) a note above the table says which rule, and sizes are still shown at the full multiplier
 (marked "if allowed"). The bottom of the page lists what the priority score is made of.
 **▶ Run setup scan** (SwingScanner.exe running) scans the picked date or the newest data session only when no scan
@@ -256,3 +257,18 @@ exe fails on the US stub files) and drops their chart pages, then the pattern sc
 
 Logs: `backend/data/logs/daily_<market>_<date>.log`, the last result in `daily_<market>_status.json`. By hand:
 `python scripts/daily_update.py --market NSE [--date YYYY-MM-DD] [--dry-run]`.
+
+## PostgreSQL + TimescaleDB (local trial)
+
+A portable PostgreSQL 18.7 with TimescaleDB 2.32.1 lives in `.tools/pgsql` (data in `.tools/pgdata`, git-ignored; no
+Windows service, this PC only, port 5433, small settings: 256 MB cache, 20 connections). It runs only when started:
+
+    powershell -ExecutionPolicy Bypass -File scripts\pg_local.ps1 start | stop | status
+    python scripts/sqlite_to_postgres.py --exchanges NSE --tf 1D            # copy bars (SQLite is only read)
+    $env:DATABASE_URL="postgresql+psycopg://charting@127.0.0.1:5433/charting"   # run the app on it
+    $env:TEST_PG_URL="postgresql+psycopg://charting@127.0.0.1:5433/postgres"    # run the backend tests on it
+
+Step 1 (NSE daily, 4.9 M bars): copied in 74 s; 817 MB -> 271 MB after compressing chunks older than 30 days; all
+backend tests pass on it; about 350 MB of memory while running (85 MB private + the 256 MB shared cache). Same requests
+on both: chart loads 30-60 ms each way; 20 users loading charts at once: PostgreSQL 52/s with 95% under 0.56 s, SQLite
+38/s with 95% under 1.3 s.

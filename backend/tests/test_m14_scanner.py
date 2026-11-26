@@ -174,3 +174,16 @@ def test_slim_all_scans_and_keep_charts_setting(scan_root, monkeypatch):
     monkeypatch.setattr(get_settings(), "scanner_keep_charts", False)
     assert scanner.slim_scans(root) == (2, 2000)
     assert not any((root / "my_scans").glob("*/charts"))
+
+
+def test_rows_list_every_setup_of_the_day(client, scan_root):
+    """A row's setups: its own first, then the others the scanner lists (the Setup Screener filters on all of them)."""
+    root, _ = scan_root
+    day = root / "my_scans" / "NSE_daily_2026-11-23"
+    (day / "near_misses.csv").write_text(
+        "symbol,setup,valid,close,stop,score,reject,other_setups\n"
+        'XYZ,BBR,False,100,95,8,S8-R003: no ATR,"PP (S8-R003), MINICOIL (S8-R003)"\n')
+    d = client.get("/scanner/scans/NSE_daily_2026-11-23").json()
+    by = {r["ticker"]: r for r in d["signals"]}
+    assert by["MARICO"]["setups"] == ["BBR", "PP"]                           # "also" = PP in the fixture
+    assert d["near_misses"][0]["setups"] == ["BBR", "PP", "MINICOIL"]        # rule ids in brackets dropped
