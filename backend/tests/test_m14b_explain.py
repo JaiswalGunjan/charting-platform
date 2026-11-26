@@ -25,7 +25,7 @@ def test_explain_a_signal_in_six_parts(client, scan_root):  # noqa: F811
     assert titles == ["What the pattern is: Bad break recovery", "Why today is the entry", "Where the stop is and why",
                       "How the position exits", "Position size", "Warnings and context"]
     text = {s["title"]: " ".join(s["lines"]) for s in e["sections"]}
-    assert "Rule passed S4-R033: Bad break recovery (BBR)" in text["Why today is the entry"]   # rule text looked up
+    assert "Rule passed: Bad break recovery (BBR)" in text["Why today is the entry"]   # rule text looked up, no code
     stop = text["Where the stop is and why"]
     assert "Stop ₹891.91 = 3.00% below the entry ₹919.50" in stop
     assert "1R = ₹27.59" in stop and "+2R = ₹974.68" in stop and "rulebook stop is ₹904.00" in stop
@@ -35,7 +35,7 @@ def test_explain_a_signal_in_six_parts(client, scan_root):  # noqa: F811
     near = client.get("/scanner/scans/NSE_daily_2026-11-23/explain",
                       params=dict(symbol="PRESTIGE", setup="VCP", near=True)).json()
     assert near["valid"] is False and near["sections"][1]["title"] == "Why it is not a breakout today"
-    assert "failed: S8-R003" in near["sections"][1]["lines"][-1]
+    assert near["sections"][1]["lines"][-1].startswith("Not a breakout - failed: no ATR")   # the reason, no code
     assert "No position" in " ".join(near["sections"][4]["lines"])
     assert client.get("/scanner/scans/NSE_daily_2026-11-23/explain",
                       params=dict(symbol="NOPE", setup="BBR")).status_code == 404

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { dollars, lakhs, positionSize } from "../../src/sizing";
+import { dollars, lakhs, positionSize, rupees } from "../../src/sizing";
 
 // MARICO BBR on 23 Nov 2026 in the scanner's report: entry 919.50, stop 891.91, 1% risk x 0.5 market multiplier
 const marico = { entry: 919.5, stop: 891.91, riskPct: 1, riskMult: 0.5 };
@@ -42,7 +42,9 @@ describe("dollars (US portfolio)", () => {
   it("formats whole dollars and millions", () => {
     expect(dollars(100_000)).toBe("$100,000");
     expect(dollars(33_120.4)).toBe("$33,120");
-    expect(dollars(1_250_000)).toBe("$1.25M");
+    expect(dollars(1_250_000)).toBe("$1,250,000");                    // the full amount, like rupees
+    expect(rupees(416_533.4)).toBe("₹4,16,533");
+    expect(rupees(1_000_000)).toBe("₹10,00,000");
     expect(dollars(0)).toBe("$0");
   });
 });

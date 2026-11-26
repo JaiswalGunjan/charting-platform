@@ -170,8 +170,8 @@ Set `SCANNER_DIR` in `.env` to the SwingScanner folder (the one with `SwingScann
 Screener** page then shows its saved scans: pick **1 Date** (a calendar over the saved scans; a weekend or holiday
 shows the session before it) and **2 Market** (NSE / NYSE / NASDAQ). Scans are read from its `scans` folder, also
 while the scanner is closed; new scans are run in SwingScanner itself. It shows
-the buy signals with entry (the signal day's close), SL and a quantity sized for the portfolio you enter (NSE in ₹ lakh,
-default 10; NYSE/NASDAQ in dollars, default $100,000) and your risk per trade (default 1%), plus near misses (with the hard rule that failed). Each row shows the company name; the symbol is a link to its chart (Entry / SL lines, the setup's pattern on).
+the buy signals with entry (the signal day's close), SL and a quantity sized for the portfolio you enter (the full amount: NSE in rupees,
+default ₹10,00,000; NYSE/NASDAQ in dollars, default $100,000) and your risk per trade (default 1%), plus near misses (with the hard rule that failed). Each row shows the company name; the symbol is a link to its chart (Entry / SL lines, the setup's pattern on).
 Clicking a row opens its "why this trade" summary right under it (click again to close); it starts with the setup
 itself (the scanner's own `explain.py` text, read as data). A search box (symbol or company) and setup chips filter
 the table; several ticked setups match with AND (every ticked setup formed on the stock that day: its own, or one the scanner lists

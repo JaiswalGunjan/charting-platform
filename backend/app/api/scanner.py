@@ -28,7 +28,7 @@ from app.api.deps import SessionDep
 from app.config import get_settings
 from app.models import Symbol
 from app.scanner_explain import market_note, rulebook, score_note
-from app.wording import neutral, neutral_all
+from app.wording import for_screen, for_screen_all
 
 router = APIRouter(prefix="/scanner", tags=["scanner"])
 SCAN_ID = re.compile(r"^(NSE|BSE|NYSE|NASDAQ)_daily_(\d{4}-\d{2}-\d{2})$")
@@ -187,7 +187,7 @@ def _rows(path: Path, market: str) -> list[dict]:
             row["risk"] = round(row["close"] - row["stop"], 4) if row["close"] is not None and row["stop"] is not None                 else None
             row["buy"] = row["valid"] and row["status"].strip().lower() == "would buy"
             for k in ("status", "notes", "stop_note", "reject", "weak", "soft"):    # on-screen text: no buy/sell words
-                row[k] = neutral(row[k])
+                row[k] = for_screen(row[k])                           # and no rulebook codes
             out.append(row)
     return out
 
@@ -209,8 +209,32 @@ def _list(scans: Path) -> list[dict]:
     return sorted(out, key=lambda s: (s["date"], s["market"]), reverse=True)
 
 
+_OFFLINE_UNTIL = [0.0]          # monotonic time until which the scanner is known to be offline
+OFFLINE_CACHE_S = 5.0
+
+
+def _reachable() -> bool:
+    """Is the scanner's server listening? A quick TCP check (0.3 s): on Windows a connection to a closed local port is
+    only refused after ~2 s of retries, which made every status call wait. An offline answer is kept for 5 s."""
+    import socket
+    import time as _time
+    from urllib.parse import urlparse
+
+    if _time.monotonic() < _OFFLINE_UNTIL[0]:
+        return False
+    u = urlparse(get_settings().scanner_url)
+    try:
+        with socket.create_connection((u.hostname or "127.0.0.1", u.port or 80), timeout=0.3):
+            return True
+    except OSError:
+        _OFFLINE_UNTIL[0] = _time.monotonic() + OFFLINE_CACHE_S
+        return False
+
+
 def _server(path: str, body: dict | None = None, timeout: float = 2.0):
     """Call the running scanner; None when it is not running."""
+    if not _reachable():
+        return None
     url = get_settings().scanner_url.rstrip("/") + path
     data = None if body is None else json.dumps(body).encode()
     req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"} if data else {},
@@ -275,7 +299,7 @@ def get_scan(scan_id: str, session: SessionDep, near: bool = Query(True)) -> dic
     for r in signals + misses:
         r["name"] = names.get(r["ticker"]) or ""
         r["chart_href"] = f"/scanner/report/{scan_id}/{r['chart']}" if r["chart"] else ""
-        r["setup_name"] = neutral(info.get(r["setup"], {}).get("name", r["setup"]))
+        r["setup_name"] = for_screen(info.get(r["setup"], {}).get("name", r["setup"]))
     present = sorted({r["setup"] for r in signals + misses})
     setups = {c: info.get(c, dict(name=c, what="", why="")) for c in present}
     mr = meta.get("market_row") or {}
@@ -283,15 +307,15 @@ def get_scan(scan_id: str, session: SessionDep, near: bool = Query(True)) -> dic
                 rules=meta.get("rules"), symbols=meta.get("symbols"), report_href=f"/scanner/report/{scan_id}/index.html",
                 capital=meta.get("capital"), risk_pct=(meta.get("config") or {}).get("risk_pct", 1.0),
                 max_alloc_pct=(meta.get("config") or {}).get("max_alloc_pct", 45.0),
-                signals=signals, near_misses=misses, setups=neutral_all(setups),
-                market_note=neutral_all(market_note(market, mr, rulebook(root))),
-                score_note=neutral(score_note(folder)) or neutral(SCORE_NOTE))
+                signals=signals, near_misses=misses, setups=for_screen_all(setups),
+                market_note=for_screen_all(market_note(market, mr, rulebook(root))),
+                score_note=for_screen(score_note(folder)) or for_screen(SCORE_NOTE))
 
 
 @router.get("/setups")
 def setups() -> dict:
     """Every buy setup the scanner knows, with its name and explanation."""
-    return neutral_all(setup_info(scanner_dir()))
+    return for_screen_all(setup_info(scanner_dir()))
 
 
 @router.get("/portfolio")
@@ -377,4 +401,4 @@ def explain_signal(scan_id: str, symbol: str = Query(..., description="ticker, e
     if row is None:
         raise HTTPException(404, f"{ticker} {setup} is not in {scan_id}")
     info = setup_info(root).get(setup, dict(name=setup, what="", why=""))
-    return neutral_all(explain(row, m.group(1), info, rulebook(root), load_meta(folder), equity, risk_pct))
+    return for_screen_all(explain(row, m.group(1), info, rulebook(root), load_meta(folder), equity, risk_pct))

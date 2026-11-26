@@ -39,10 +39,14 @@ export function positionSize(p: SizeIn): Size {
 }
 
 /** Indian-style amount: 10,00,000 -> "₹10 L", 2,50,00,000 -> "₹2.5 Cr". */
-/** Dollars for US positions: $250,000, $1.25M. */
+/** Dollars, the full amount: $250,000, $1,250,000. */
 export function dollars(v: number): string {
-  if (v >= 1e6) return `$${+(v / 1e6).toFixed(2)}M`;
   return `$${Math.round(v).toLocaleString("en-US")}`;
+}
+
+/** Rupees, the full amount with Indian grouping: ₹4,16,533, ₹10,00,000. */
+export function rupees(v: number): string {
+  return `₹${Math.round(v).toLocaleString("en-IN")}`;
 }
 
 export function lakhs(v: number): string {

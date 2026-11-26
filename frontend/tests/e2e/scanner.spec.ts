@@ -39,6 +39,7 @@ test("setup screener: breakouts with entry / SL / qty, near misses, setup filter
   await expect(sig).toContainText("2,328.00");                             // stop loss
   await expect(sig).toContainText("-3.0%");
   await expect(sig).toContainText("69");          // quantity at Rs 10 L: floor(10,00,000 x 1% x 0.5 / 72)
+  await expect(sig).toContainText("₹1,65,600 · 16.6%");                    // the position as a full rupee amount
   // score column, sorted by score, highest first (not by the scanner's rank)
   await expect(panel.locator(".scan-table thead")).toContainText("Score");
   await expect(panel.locator(".scan-table tbody tr .scan-score")).toHaveText(["9.95", "9.80"]);
@@ -80,24 +81,24 @@ test("setup screener: breakouts with entry / SL / qty, near misses, setup filter
   await expect(why).toContainText("+2R = ₹2,544.00");
   await expect(why).toContainText("Portfolio size ₹1,000,000.00");
 
-  // the portfolio box (in lakh) re-sizes the table and the explanation
-  const eq = panel.getByLabel("Portfolio size in lakh");
-  await expect(eq).toHaveValue("10");
-  await eq.fill("20");
+  // the portfolio box (full rupees) re-sizes the table and the explanation
+  const eq = panel.getByLabel("Portfolio size in rupees");
+  await expect(eq).toHaveValue("1000000");
+  await eq.fill("2000000");
   await expect(sig).toContainText("138");
   await expect(why).toContainText("Portfolio size ₹2,000,000.00");
   await expect(why).toContainText("Shares = risk / (entry - stop) = 138");
-  await eq.fill("2.5");                                                     // fractions of a lakh work
+  await eq.fill("250000");
   await expect(sig).toContainText("17");                                    // floor(2,50,000 x 1% x 0.5 / 72)
   await eq.fill("");                                                        // empty: no sizes, no error
   await expect(sig.locator("td").last()).toHaveText("—");
-  await eq.fill("20");
+  await eq.fill("2000000");
   await page.reload();                                                      // remembered
-  await expect(panel.getByLabel("Portfolio size in lakh")).toHaveValue("20");
+  await expect(panel.getByLabel("Portfolio size in rupees")).toHaveValue("2000000");
   await openRow(panel.locator(".scan-table tbody tr:not(.why-row)", { hasText: "TCS" }));  // the chart sizes with it too
   await expect(chart.locator(".scanner-hit")).toContainText("qty 138");
   await panel.getByRole("button", { name: "reset" }).click();
-  await expect(panel.getByLabel("Portfolio size in lakh")).toHaveValue("10");
+  await expect(panel.getByLabel("Portfolio size in rupees")).toHaveValue("1000000");
 
   // risk per trade: default 1%; 2% doubles the quantity, and the explanation follows
   const risk = panel.getByLabel("Risk per trade in percent");
@@ -168,13 +169,15 @@ test("setup screener: breakouts with entry / SL / qty, near misses, setup filter
   await panel.locator(".scan-views button", { hasText: "Near misses" }).click();
   await expect(chips).toHaveText([/All\s*1/, /VCP\s*1/]);
   const near = panel.locator(".scan-table tbody tr:not(.why-row)", { hasText: "INFY" });
-  await expect(near).toContainText("S8-R003");
+  await expect(near).toContainText("no ATR contraction");               // the reason, without its rule code
+  await expect(near).not.toContainText("S8-R003");
   await openRow(near);
   await near.click();
   await expect(chart.locator(".legend-row").first()).toContainText("NSE:INFY");
-  await expect(chart.locator(".scanner-hit")).toContainText("near miss: S8-R003");
+  await expect(chart.locator(".scanner-hit")).toContainText("near miss: no ATR contraction");
   await expect(why).toContainText("Why it is not a breakout today");
-  await expect(why).toContainText("failed: S8-R003");
+  await expect(why).toContainText("failed: no ATR contraction");
+  expect(await panel.innerText()).not.toMatch(/\b(S\d+[A-Z]?|SD)-R\d/);       // no rulebook codes anywhere
   await why.getByTitle("Close").click();
   await expect(panel.locator(".why")).toHaveCount(0);
 
@@ -247,7 +250,7 @@ test("setup screener: a date picker, then a market; NYSE and NASDAQ scans open; 
     await expect(panel.locator(".why")).toContainText("$");                  // US prices in dollars
   }
 
-  // the portfolio box follows the scan's currency: dollars for NYSE / NASDAQ, rupees in lakh for NSE
+  // the portfolio box follows the scan's currency: dollars for NYSE / NASDAQ, rupees for NSE, both full amounts
   await market("NYSE");
   const usd = panel.getByLabel("Portfolio size in dollars");
   await expect(usd).toHaveValue("100000");                                  // default $100,000
@@ -263,7 +266,7 @@ test("setup screener: a date picker, then a market; NYSE and NASDAQ scans open; 
   await expect(panel.locator(".why")).toContainText("Portfolio size $50,000.00");
 
   await market("NSE");                                                      // rupees again, its own value
-  await expect(panel.getByLabel("Portfolio size in lakh")).toHaveValue("10");
+  await expect(panel.getByLabel("Portfolio size in rupees")).toHaveValue("1000000");
   await expect(panel.getByLabel("Portfolio size in dollars")).toHaveCount(0);
   await market("NASDAQ");
   await expect(panel.getByLabel("Portfolio size in dollars")).toHaveValue("50000"); // remembered per currency
@@ -283,20 +286,23 @@ test("setup screener: a date picker, then a market; NYSE and NASDAQ scans open; 
   await expect(panel.locator(".qty-blocked")).toHaveCount(0);
 });
 
-test("Setup Screener opens as its own page next to the Pattern Screener; a signal opens its chart", async ({ page }) => {
+test("Setup Screener opens in the same tab, next to the Pattern Screener; a signal opens its chart", async ({ page }) => {
   await openApp(page);
   const links = page.locator(".topbar a.toolbar-link");
-  await expect(links).toHaveText(["▦ Pattern Screener ↗", "▤ Setup Screener ↗"]);   // side by side
-  const [setups] = await Promise.all([page.context().waitForEvent("page"),
-    page.getByRole("link", { name: /Setup Screener/ }).click()]);
+  await expect(links).toHaveText(["▦ Pattern Screener", "▤ Setup Screener"]);       // side by side
+  await expect(links.first()).not.toHaveAttribute("target", /.+/);                 // same tab
+  const pagesBefore = page.context().pages().length;
+  await page.getByRole("link", { name: "▤ Setup Screener" }).click();
+  const setups = page;                                                             // the same tab, not a new one
+  expect(page.context().pages().length).toBe(pagesBefore);
   await expect(setups).toHaveURL(/\?page=setups$/);
   await expect(setups).toHaveTitle("Setup Screener · Charting Lab");
   await expect(setups.locator(".page-title")).toHaveText("Setup Screener");
   const panel = setups.locator(".panel.scanner.page");
   await expect(panel.getByRole("group", { name: "Scan market" }).locator("button.active")).toHaveText("NSE");
-  await expect(panel.getByLabel("Portfolio size in lakh")).toHaveValue("10");
+  await expect(panel.getByLabel("Portfolio size in rupees")).toHaveValue("1000000");
   // "Risk per trade" sits to the right of "Portfolio size", on the same line
-  const pf = (await panel.getByLabel("Portfolio size in lakh").boundingBox())!;
+  const pf = (await panel.getByLabel("Portfolio size in rupees").boundingBox())!;
   const rk = (await panel.getByLabel("Risk per trade in percent").boundingBox())!;
   expect(rk.x).toBeGreaterThan(pf.x + pf.width);
   expect(Math.abs(rk.y - pf.y)).toBeLessThan(6);
@@ -311,7 +317,7 @@ test("Setup Screener opens as its own page next to the Pattern Screener; a signa
 
   // changing the portfolio re-sizes here without opening another chart tab
   const before = setups.context().pages().length;
-  await panel.getByLabel("Portfolio size in lakh").fill("20");
+  await panel.getByLabel("Portfolio size in rupees").fill("2000000");
   await expect(panel.locator(".scan-table tbody tr:not(.why-row)", { hasText: "TCS" })).toContainText("138");
   await setups.waitForTimeout(600);
   expect(setups.context().pages().length).toBe(before);

@@ -221,10 +221,10 @@ export default function App() {
             <PatternMenu metas={patternMetas} enabled={patterns} counts={patternCounts} onChange={setPatterns} />
           )}
         </div>
-        <a className="toolbar-link" href="/?page=screener" target="_blank" rel="noopener"
-          title="Opens in a new tab: the patterns formed on a session's daily or weekly bar, every stock">▦ Pattern Screener ↗</a>
-        <a className="toolbar-link" href="/?page=setups" target="_blank" rel="noopener"
-          title="Opens in a new tab: the SwingScanner's breakouts by date and market, with entry, stop, quantity and why">▤ Setup Screener ↗</a>
+        <a className="toolbar-link" href="/?page=screener"
+          title="The patterns formed on a session's daily or weekly bar, every stock">▦ Pattern Screener</a>
+        <a className="toolbar-link" href="/?page=setups"
+          title="The SwingScanner's breakouts by date and market, with entry, stop, quantity and why">▤ Setup Screener</a>
         <div className="spacer" />
         <span
           className={`conn ${conn}${health?.simulated_ticks ? " sim" : ""}${health?.ticks === "none" ? " eod" : ""}`}

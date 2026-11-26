@@ -196,13 +196,15 @@ test("pattern screener: screens of past sessions are saved and picked by date", 
   await expect(picker).toHaveValue(latest.session);
 });
 
-test("the chart opens the Pattern Screener as a new page: date, then exchange, then timeframe", async ({ page }) => {
+test("the chart opens the Pattern Screener in the same tab: date, then exchange, then timeframe", async ({ page }) => {
   await openApp(page);
   await expect(page.locator(".topbar .brand svg.logo")).toBeVisible();                  // the Charting Lab logo
   await expect(page.locator('link[rel="icon"]')).toHaveAttribute("href", "/favicon.svg");  // and the tab icon
   expect((await page.request.get("/favicon.svg")).headers()["content-type"]).toContain("svg");
-  const [screener] = await Promise.all([page.context().waitForEvent("page"),
-    page.getByRole("link", { name: /Pattern Screener/ }).click()]);
+  const pagesBefore = page.context().pages().length;
+  await page.getByRole("link", { name: "▦ Pattern Screener" }).click();
+  const screener = page;                                                   // the same tab, not a new one
+  expect(page.context().pages().length).toBe(pagesBefore);
   await expect(screener).toHaveURL(/\?page=screener$/);
   await expect(screener).toHaveTitle("Pattern Screener · Charting Lab");
   await expect(screener.locator(".today-steps .step")).toHaveText([/1\s*Date/, /2\s*Exchange/, /3\s*Timeframe/]);
@@ -210,5 +212,7 @@ test("the chart opens the Pattern Screener as a new page: date, then exchange, t
   await expect(screener.getByRole("group", { name: "Exchange" }).getByRole("button", { name: "NSE" })).toBeEnabled();
   await expect(screener.getByRole("group", { name: "Timeframe" }).getByRole("button")).toHaveText(["Daily", "Weekly"]);
   await expect(screener.locator(".topbar .brand svg.logo")).toBeVisible();
-  await expect(page.locator(".chart canvas").first()).toBeVisible();                   // the chart tab is unchanged
+  await screener.locator(".topbar a.brand").click();                       // the logo leads back to the chart
+  await expect(page).toHaveURL(/\/$/);
+  await expect(page.locator(".chart canvas").first()).toBeVisible();
 });

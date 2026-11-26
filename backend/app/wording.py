@@ -102,3 +102,47 @@ def neutral_html(html: str) -> str:
     """neutral() on the visible text of an HTML page; tags, attributes, scripts and styles are left as they are."""
     parts = _TAG.split(html)
     return "".join(p if i % 2 else neutral(p) for i, p in enumerate(parts))
+
+
+# ---------------------------------------------------------------- rule codes (S7-R025, S6A-R012/R020, SD-R002, ...)
+# The rulebook's codes mean nothing to a reader: the Setup Screener shows the rules' words without them.
+_ID = r"(?:S\d+[A-Z]?|SD)-R\d{1,3}"
+_SEQ = rf"{_ID}(?:\s*[,/]\s*(?:{_ID}|R\d{{1,3}}))*…?"
+
+
+def no_rule_codes(text: str | None) -> str | None:
+    """`text` without rulebook codes: "(S6A-R012/R020)" and "S8-R003: " go, "Rule passed S4-R033: x" -> "Rule passed: x"."""
+    if not text or not re.search(_ID, text):
+        return text
+    t = re.sub(rf"([A-Za-z])\s+{_SEQ}\s*:\s*", r"\1: ", text)   # "Soft miss S8-R004: x" -> "Soft miss: x"
+    t = re.sub(rf"(Rule passed|Rule failed)\s+{_SEQ}\s*$", r"\1", t)
+    t = re.sub(rf"\s*\(\s*{_SEQ}\s*\)?", "", t)           # (S6A-R012/R020), also when cut short: (S6B-R009/R01…
+    t = re.sub(rf"\b{_SEQ}\s*:\s*", "", t)               # S8-R003: no ATR contraction -> no ATR contraction
+    t = re.sub(rf"\s*\b{_SEQ}", "", t)                   # any code left
+    t = re.sub(r"\s+([.,;:)])", r"\1", t)
+    t = re.sub(r"(^|[;,]\s*)[;,]\s*", r"\1", t)
+    t = re.sub(r" {2,}", " ", t).strip(" ;,")
+    return t
+
+
+def for_screen(text: str | None) -> str | None:
+    """Text as the Setup Screener shows it: no buy / sell words, no rulebook codes."""
+    return neutral(no_rule_codes(text))
+
+
+def for_screen_all(obj, keep=("id",)):
+    """for_screen() on every string in lists / dicts (the values of `keep` keys are code, left alone). In a list of
+    lines, a line that only listed codes ("Other rules satisfied: S5B-R008, ...") is dropped."""
+    if isinstance(obj, str):
+        return for_screen(obj)
+    if isinstance(obj, list):
+        out = []
+        for x in obj:
+            y = for_screen_all(x, keep)
+            if isinstance(x, str) and y != x and (not y or y.endswith(":") or y in ("Rule passed", "Rule passed:")):
+                continue
+            out.append(y)
+        return out
+    if isinstance(obj, dict):
+        return {k: (v if k in keep else for_screen_all(v, keep)) for k, v in obj.items()}
+    return obj

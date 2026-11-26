@@ -1,15 +1,15 @@
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { API, api, type ScannerScan, type ScannerSignal, type ScannerStatus, type SignalExplanation } from "./api";
 import { fmt } from "./format";
-import { dollars, lakhs, positionSize, type Size } from "./sizing";
+import { dollars, positionSize, rupees, type Size } from "./sizing";
 
 type View = "buy" | "near";
 const MARKET_ORDER = ["NSE", "BSE", "NYSE", "NASDAQ"];
 const VIEW_LABEL: Record<View, string> = { buy: "Breakouts", near: "Near misses" };   // no buy / sell words (SEBI)
-/** The portfolio box per currency: NSE/BSE scans in rupees (typed in lakh), NYSE/NASDAQ scans in dollars. */
+/** The portfolio box per currency, as a full amount: NSE/BSE scans in rupees, NYSE/NASDAQ scans in dollars. */
 type Cur = "INR" | "USD";
 const CUR: Record<Cur, { unit: number; def: number; key: string; sym: string; word: string; fmt: (v: number) => string }> = {
-  INR: { unit: 100_000, def: 1_000_000, key: "scanner.equity", sym: "₹", word: "lakh", fmt: lakhs },   // 1 = Rs 1,00,000
+  INR: { unit: 1, def: 1_000_000, key: "scanner.equity", sym: "₹", word: "", fmt: rupees },
   USD: { unit: 1, def: 100_000, key: "scanner.equityUsd", sym: "$", word: "", fmt: dollars },
 };
 const US_MARKETS = new Set(["NYSE", "NASDAQ"]);
@@ -61,7 +61,7 @@ export default function ScannerPanel(props: {
     INR: Number(localStorage.getItem(CUR.INR.key)) || CUR.INR.def,
     USD: Number(localStorage.getItem(CUR.USD.key)) || CUR.USD.def,
   }));
-  // what is typed, per currency (lakh for rupees, dollars for dollars)
+  // what is typed, per currency (the full amount)
   const [eqTextBy, setEqTextBy] = useState<Record<Cur, string>>(() => ({
     INR: String(+(eqBy.INR / CUR.INR.unit).toFixed(4)), USD: String(eqBy.USD),
   }));
@@ -329,9 +329,8 @@ export default function ScannerPanel(props: {
               <span className="equity-label">Portfolio size</span>
               <span className="muted">{C.sym}</span>
               <input type="number" min={0.01} step="any" value={eqText}
-                aria-label={cur === "INR" ? "Portfolio size in lakh" : "Portfolio size in dollars"}
-                title={cur === "INR" ? "Your portfolio size in lakh (1 = ₹1 lakh); quantities are sized with the scanner's rule"
-                  : "Your portfolio size in US dollars; quantities are sized with the scanner's rule"}
+                aria-label={cur === "INR" ? "Portfolio size in rupees" : "Portfolio size in dollars"}
+                title={`Your portfolio size in ${cur === "INR" ? "rupees" : "US dollars"}; quantities are sized with the scanner's rule`}
                 onChange={(e) => {
                   setEqText(e.target.value);
                   const l = Number(e.target.value);
@@ -373,8 +372,8 @@ export default function ScannerPanel(props: {
               <ul>{scan.market_note.lines.map((l, k) => <li key={k}>{l}</li>)}</ul>
               {scan.market_note.rules.length > 0 && (
                 <details>
-                  <summary>Rules {scan.market_note.rules.map((r) => r.id).join(", ")}</summary>
-                  <ul>{scan.market_note.rules.map((r) => <li key={r.id}><b>{r.id}</b> {r.text}</li>)}</ul>
+                  <summary>What the rulebook says</summary>
+                  <ul>{scan.market_note.rules.map((r) => <li key={r.id}>{r.text}</li>)}</ul>
                 </details>
               )}
             </div>

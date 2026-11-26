@@ -94,3 +94,40 @@ def test_report_page_text_has_no_buy_sell_words(client, scan_root):  # noqa: F81
     visible = re.sub(r"<script\b.*?</script>|<style\b.*?</style>|<[^>]+>", " ", html, flags=re.DOTALL | re.IGNORECASE)
     assert not BANNED.search(visible), BANNED.findall(visible)
     assert "BREAKOUT: entry Rs 919.50" in html and 'class="badge buy"' in html     # markup kept
+
+
+CODE = re.compile(r"\b(?:S\d+[A-Z]?|SD)-R\d")
+
+
+@pytest.mark.parametrize("src, out", [
+    ("Rule passed S4-R039: Three-touch-point trendline", "Rule passed: Three-touch-point trendline"),
+    ("Soft miss S8-R004: stochastic 64 >= 50", "Soft miss: stochastic 64 >= 50"),
+    ("Not a breakout - failed: S8-R003: no ATR; S5B-R008: no volume", "Not a breakout - failed: no ATR; no volume"),
+    ("S8-R003: no ATR(1) contraction", "no ATR(1) contraction"),
+    ("the stop moves up to the entry price (S6A-R012/R020).", "the stop moves up to the entry price."),
+    ("exit on the first down-tick (S6B-R009/R011/R01…", "exit on the first down-tick"),      # cut short
+    ("Liquidity: turnover 1,383 >= 100 (S4-R047) = PASS", "Liquidity: turnover 1,383 >= 100 = PASS"),
+    ("no rule codes here", "no rule codes here"),
+])
+def test_rule_codes_are_removed(src, out):
+    from app.wording import no_rule_codes
+    assert no_rule_codes(src) == out
+
+
+def test_lines_that_only_listed_codes_are_dropped():
+    from app.wording import for_screen_all
+    lines = ["Rule passed S4-R033: Bad break recovery", "Rule passed S3B-R006", "Other rules satisfied: S5B-R008, S8-R004",
+             "Hard checks (each one must pass):", "- Liquidity (S4-R047) = PASS"]
+    assert for_screen_all(lines) == ["Rule passed: Bad break recovery", "Hard checks (each one must pass):",
+                                     "- Liquidity = PASS"]                   # a heading of its own stays
+    assert for_screen_all({"id": "S7-R025", "text": "x (S7-R025)"}) == {"id": "S7-R025", "text": "x"}   # ids are code
+
+
+def test_setup_screener_answers_have_no_rule_codes(client, scan_root):  # noqa: F811
+    d = client.get("/scanner/scans/NSE_daily_2026-11-23").json()
+    e = client.get("/scanner/scans/NSE_daily_2026-11-23/explain", params=dict(symbol="MARICO", setup="BBR")).json()
+    n = client.get("/scanner/scans/NSE_daily_2026-11-23/explain",
+                   params=dict(symbol="PRESTIGE", setup="VCP", near="true")).json()
+    for answer in (d, e, n):
+        bad = [(k, v) for k, v in texts(answer) if CODE.search(v) and k not in ("id", "chart", "chart_href")]
+        assert not bad, bad[:3]

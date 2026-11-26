@@ -68,7 +68,7 @@ def test_scan_detail_ranks_signals_and_maps_setups_to_patterns(client, scan_root
     assert top["setup_name"] == "Bad break recovery" and d["signals"][2]["buy"] is False   # status "skipped"
     assert set(d["setups"]) == {"BBR", "WEIRD", "VCP"} and d["setups"]["VCP"]["name"] == "Volatility contraction pattern"
     nm = d["near_misses"][0]
-    assert nm["valid"] is False and nm["pattern"] == "vcp" and nm["reject"].startswith("S8-R003")
+    assert nm["valid"] is False and nm["pattern"] == "vcp" and nm["reject"] == "no ATR"   # no rulebook code
     assert client.get("/scanner/scans/NSE_daily_2026-11-23", params={"near": False}).json()["near_misses"] == []
 
 
@@ -187,3 +187,27 @@ def test_rows_list_every_setup_of_the_day(client, scan_root):
     by = {r["ticker"]: r for r in d["signals"]}
     assert by["MARICO"]["setups"] == ["BBR", "PP"]                           # "also" = PP in the fixture
     assert d["near_misses"][0]["setups"] == ["BBR", "PP", "MINICOIL"]        # rule ids in brackets dropped
+
+
+def test_offline_scanner_is_detected_quickly(monkeypatch):
+    """A closed local port is refused only after ~2 s on Windows: the 0.3 s check answers sooner, and an offline answer
+    is remembered for a few seconds (so the Setup Screener opens without a 2-second wait)."""
+    import socket
+    import time
+
+    monkeypatch.setattr(scanner, "_OFFLINE_UNTIL", [0.0])
+    with socket.socket() as s:                                   # a free port that nothing listens on
+        s.bind(("127.0.0.1", 0))
+        port = s.getsockname()[1]
+    monkeypatch.setattr(get_settings(), "scanner_url", f"http://127.0.0.1:{port}")
+    t = time.perf_counter()
+    assert scanner._server("/api/launcher/settings") is None
+    assert time.perf_counter() - t < 1.0
+    t = time.perf_counter()
+    assert scanner._reachable() is False and time.perf_counter() - t < 0.05     # remembered: no new check
+    with socket.socket() as srv:                                 # something listening: reachable
+        srv.bind(("127.0.0.1", 0))
+        srv.listen()
+        monkeypatch.setattr(scanner, "_OFFLINE_UNTIL", [0.0])
+        monkeypatch.setattr(get_settings(), "scanner_url", f"http://127.0.0.1:{srv.getsockname()[1]}")
+        assert scanner._reachable() is True
