@@ -11,14 +11,16 @@ from app.patterns import screener as sc
 
 @pytest.fixture()
 def screens(tmp_path, monkeypatch):
-    monkeypatch.setattr(sc, "SCREEN_DIR", tmp_path / "screens")
+    from app.config import get_settings
+
+    monkeypatch.setattr(get_settings(), "screens_dir", str(tmp_path / "screens"))
     monkeypatch.setattr(sc, "MIN_BARS", 30)        # the test universe has ~1 year of daily bars
     return tmp_path / "screens"
 
 
 def last_bar_patterns(client, symbol, tf):
     """What the chart itself marks on the last bar, with the rules run on this timeframe's own bars."""
-    ids = ",".join(sorted(sc.SCREEN_IDS))
+    ids = ",".join(sorted(sc.screen_ids()))
     hist = client.get("/history", params=dict(symbol=symbol, tf=tf, limit=1)).json()
     r = client.get("/patterns/scan", params=dict(symbol=symbol, tf=tf, ids=ids, limit=600, basis="chart")).json()
     return sorted({m["pattern"] for m in r["markers"] if m["t"] == hist["t"][-1]})
@@ -35,7 +37,7 @@ def test_screen_matches_the_chart_scan(client, session_factory, screens, tf):
         got = by_sym[sym]["patterns"] if sym in by_sym else []
         assert got == expect, (sym, tf)
     for r in res["rows"]:
-        assert r["patterns"] and set(r["patterns"]) <= sc.SCREEN_IDS and "sr" not in r["patterns"]
+        assert r["patterns"] and set(r["patterns"]) <= sc.screen_ids() and "sr" not in r["patterns"]
         assert r["close"] > 0 and r["turnover"] >= 0 and {"pattern", "text", "notes"} <= set(r["hits"][0])
     hist = client.get("/history", params=dict(symbol="NSE:RELIANCE", tf=tf, limit=1)).json()
     assert res["as_of"] == hist["t"][-1]
@@ -55,7 +57,7 @@ def test_latest_bar_hits_equal_the_full_scan_at_every_end_date():
     h, l = np.maximum(o, c) * (1 + np.abs(rng.normal(0, 0.01, n))), np.minimum(o, c) * (1 - np.abs(rng.normal(0, 0.01, n)))  # noqa: E741
     v = rng.integers(10_000, 90_000, n).astype(float)
     t = np.arange(n, dtype=np.int64) * 86400
-    full = scan(t, o, h, l, c, v, sc.SCREEN_IDS)
+    full = scan(t, o, h, l, c, v, sc.screen_ids())
     by_bar: dict[int, set] = {}
     for m in full["markers"]:
         by_bar.setdefault(m["t"], set()).add(m["pattern"])
@@ -79,7 +81,9 @@ def test_screens_dir_setting(tmp_path, monkeypatch):
     monkeypatch.setattr(get_settings(), "screens_dir", str(tmp_path / "elsewhere"))
     assert sc.screen_path("nse", "1D") == tmp_path / "elsewhere" / "NSE_1D.json"
     monkeypatch.setattr(get_settings(), "screens_dir", "")
-    assert sc.screen_path("NSE", "1W") == sc.SCREEN_DIR / "NSE_1W.json"
+    from app.patterns import store
+
+    assert sc.screen_path("NSE", "1W") == store.SCREEN_DIR / "NSE_1W.json"
 
 
 def test_unknown_timeframe_and_empty_exchange(session_factory, screens):

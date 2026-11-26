@@ -17,6 +17,25 @@ class Settings(BaseSettings):
     database_url: str = f"sqlite:///{(BACKEND_DIR / 'data' / 'charting.db').as_posix()}"
     data_source: str = "synthetic"  # "synthetic" | "kite" | "eod" (local CSV history)
 
+    # the replaceable parts (app/ports.py, app/providers.py): a built-in name or "package.module:Class"
+    setup_scanner: str = "swingscanner"   # "swingscanner" | "none"; the default one when several are set
+    setup_scanners: str = ""              # several at once: "swingscanner,mypkg.scan:Fast" (empty: just setup_scanner)
+    pattern_engines: str = ""             # several combined: "rulebook,mypkg.pat:Candles" (empty: just pattern_engine)
+    pattern_engine: str = "rulebook"
+    screen_store: str = "json"
+    bar_store: str = "sql"
+    # a store per stored timeframe, e.g. "1m=mypkg.ch:ClickHouseBars" (others use bar_store): years of minute bars
+    # for many markets in a column store, daily and hourly bars where they are
+    bar_stores: str = ""
+    # minute bars in PostgreSQL + TimescaleDB, the last 2 years (owner's choice, 26 Nov 2026): BAR_STORES=1m=timescale
+    minute_database_url: str = ""         # empty: DATABASE_URL (which must then be PostgreSQL)
+    minute_retention_days: int = 730      # chunks older than this are dropped; older bars are not written
+    minute_compress_after_days: int = 30
+    markets_file: str = ""                # the market registry (default: app/markets.toml)
+    # a live feed per exchange: "NSE=kite,BSE=kite,NYSE=mypkg.vendor:Ticks" (kite | synthetic | static | import path);
+    # exchanges not named use the default feed (kite when DATA_SOURCE=kite, else simulated or none)
+    tick_sources: str = ""
+
     # local end-of-day CSVs (python -m app.cli import-eod)
     eod_dir: str = ""                  # path to a market_data_daily folder
     scanner_dir: str = ""              # SwingScanner folder (has SwingScanner.exe, swingbt_config.ini, scans/)

@@ -42,7 +42,7 @@ Lightweight Charts + FastAPI + PostgreSQL/TimescaleDB + Redis + Kite Connect:
 6. First AI feature: "explain this chart" from OHLCV + indicator context.
 
 ## Implementation status (24 Nov 2026)
-Milestones M1–M12 are built: backend (`backend/`, 306 pytest tests; 71 Vitest + 24 Playwright tests in `frontend/tests`) and frontend (`frontend/`,
+Milestones M1–M12 are built: backend (`backend/`, 345 pytest tests (+5 with TEST_PG_URL); 75 Vitest + 25 Playwright tests in `frontend/tests`) and frontend (`frontend/`,
 React 19 + Vite 7 + lightweight-charts 5.3, v5 `addSeries(XSeries, opts, paneIndex)` API).
 `run-demo.ps1` starts everything. See README.md for the milestone table and API overview.
 Node is a portable copy in `.tools/node` (gitignored); put it on PATH before running npm.
@@ -61,10 +61,28 @@ Brand: our own logo, `frontend/src/Logo.tsx` = `frontend/public/favicon.svg` (ta
 Setup Screener page: `frontend/src/SetupPage.tsx` (`/?page=setups`, the ScannerPanel full width); pages are routed in main.tsx.
 The chart page (App.tsx) has no alerts and no scanner tab (removed at the owner's request, 25 Nov 2026): the sidebar is
 the watchlist; scanner links (/?scan=...&symbol=...&setup=...) open the signal on the chart directly. The SwingScanner tab is named "Setup Scanner".
-SwingScanner: `backend/app/api/scanner.py` reads the owner's scanner bundle (`SCANNER_DIR`: scans/*/signals.csv,
-near_misses.csv, market.json, portfolio.json) and proxies run/job to its local server (:8765); read-only.
+Replaceable parts (owner's request, 26 Nov 2026): the product layer names no tool. Ports in `backend/app/ports.py`
+(SetupScanner, PatternEngine, ScreenStore, BarStore; MarketDataSource in marketdata/base.py), adapters picked by
+settings in `app/providers.py` (SETUP_SCANNER, PATTERN_ENGINE, SCREEN_STORE, BAR_STORE: a built-in name or
+"package.module:Class"); the daily job's tools are in `scripts/daily_update.toml`; the API contract the UI relies on is
+`docs/api/openapi.json` (test_m22 fails on any API change; refresh with UPDATE_API_CONTRACT=1). Keep it that way: product
+code (app/api, screener, history, cli) calls only the ports; only `app/marketdata/barstore.py` touches the candles
+table; tool-specific code goes in an adapter. Guide: `docs/ARCHITECTURE.md`; fakes of every part in tests/test_m21_ports.py.
+Growth (owner, 26 Nov 2026: more setup scanners and patterns, 10-12 markets, 10 years of daily + minute data, live
+feeds): several at once via SETUP_SCANNERS (`?scanner=` on /scanner/*, picker in the UI), PATTERN_ENGINES (combined
+catalog, app/patterns/combined.py), BAR_STORES (a store per timeframe, e.g. 1m in a column store; chunked
+append/delete_bars), TICK_SOURCES (a feed per exchange; feed live|simulated|none; /health feeds; chart badge per
+exchange). Markets are data: `backend/app/markets.toml` -> app/markets.py, GET /markets, frontend/src/markets.ts; never
+add exchange lists in code (adapters may name their own). WebSocket contract: docs/api/websocket.md. Minute bars
+(owner's decision 26 Nov 2026): PostgreSQL + TimescaleDB, last 2 years: BAR_STORES=1m=timescale,
+app/marketdata/minute_store.py (hypertable candles_1m, compression after 30 days, retention 730 days, older bars not
+written, own MINUTE_DATABASE_URL), `app.cli minute-store`; tests never touch it (conftest clears BAR_STORES before
+settings load: a session-wide seed once leaked test bars into the real table).
+SwingScanner (the setup scanner adapter, `backend/app/adapters/swingscanner/`): `core.py` reads the owner's scanner bundle
+(`SCANNER_DIR`: scans/*/signals.csv, near_misses.csv, market.json, portfolio.json) and proxies run/job to its local server
+(:8765); read-only. `app/api/scanner.py` is the product side (ranking, company names, on-screen wording).
 It flags US data that holds only stubs (`data_warnings`): SwingScanner.exe of 18 Nov fails on it; the source does not.
-Its HTML report is served restyled in our theme by `app/api/scanner_report.py` (theme in `app/static/scanner_report.*`,
+Its HTML report is served restyled in our theme by `adapters/swingscanner/report.py` (theme in its `static/scanner_report.*`,
 files read, never written; the report's own /api actions are passed to the scanner's server).
 Scans keep no chart pages: `drop_charts` removes `<scan>/charts` after an app-run scan and `app.cli scanner-slim`
 for all (owner's choice, 26 Nov 2026; the only thing the app deletes in the scanner's folder).

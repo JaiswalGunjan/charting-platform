@@ -35,7 +35,7 @@ export default function SetupPage() {
       <header className="topbar">
         <a className="brand" href="/" title="Open the chart"><Logo /> Charting Lab</a>
         <span className="page-title">Setup Screener</span>
-        <span className="muted small">Breakouts from your SwingScanner rulebook: entry, stop, quantity, and why</span>
+        <span className="muted small">Breakouts by date and market: entry, stop, quantity, and why</span>
         <span className="spacer" />
         <button className="theme-toggle" onClick={flip} title={theme === "dark" ? "Switch to day view" : "Switch to night view"}>
           {theme === "dark" ? "☾ Night" : "☀ Day"}

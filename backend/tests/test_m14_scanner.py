@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from app.api import scanner
+from app.adapters.swingscanner import core as scanner
 from app.config import get_settings
 
 HEADER = ("date,symbol,setup,valid,close,stop,stop_pct,stop_note,score,size_mult,stage,phase,ext,base_len,ipo,in_zone,"

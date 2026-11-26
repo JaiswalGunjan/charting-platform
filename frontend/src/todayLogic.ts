@@ -4,14 +4,16 @@ import type { TodayRow } from "./api";
 export type SortKey = "ticker" | "name" | "close" | "change_pct" | "turnover" | "patterns";
 export interface Sort { key: SortKey; dir: 1 | -1 }
 
-const US = new Set(["NASDAQ", "NYSE"]);
+import { bigMoney, bigUnit, currencyOf } from "./markets";
 
-/** Turnover in crore (India) or millions of dollars (US). */
-export const turnoverText = (v: number, exchange: string) =>
-  US.has(exchange) ? `$${(v / 1e6).toFixed(v >= 1e8 ? 0 : 1)}M` : `₹${(v / 1e7).toFixed(v >= 1e9 ? 0 : 1)} Cr`;
+/** Turnover in the exchange's currency: crore for rupees, millions otherwise (₹12.5 Cr, $3.2M). */
+export const turnoverText = (v: number, exchange: string) => bigMoney(v, currencyOf(exchange));
 
-/** The minimum-turnover box is in crore for Indian exchanges and in $ millions for US ones. */
-export const turnoverUnit = (exchange: string) => (US.has(exchange) ? 1e6 : 1e7);
+/** The minimum-turnover box: crore for rupees, millions otherwise. */
+export const turnoverUnit = (exchange: string) => bigUnit(currencyOf(exchange)).unit;
+
+/** The unit's label: "₹ Cr", "$M", "£M". */
+export const turnoverLabel = (exchange: string) => bigUnit(currencyOf(exchange)).label;
 
 export function liquidRows(rows: TodayRow[], minTurnover: number, exchange: string): TodayRow[] {
   const floor = minTurnover * turnoverUnit(exchange);

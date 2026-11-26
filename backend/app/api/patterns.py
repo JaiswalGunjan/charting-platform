@@ -1,4 +1,4 @@
-"""Chart patterns from the owner's rulebook rules (app/patterns).
+"""Chart patterns, from the pattern engine in use (PATTERN_ENGINE; built in: the owner's rulebook rules).
 
 The rules are written for daily bars (a cup is 20-130 bars, a pocket pivot compares 10 days of volume, ...).
 With basis=daily (the default) they always run on daily bars and the hits are placed on the chart's own
@@ -15,7 +15,7 @@ from app.wording import neutral_all
 from app.api.deps import SessionDep, symbol_or_404, timeframe_or_400
 from app.marketdata.history import get_bars
 from app.marketdata.timeframes import TIMEFRAMES, Timeframe
-from app.patterns.engine import BY_ID, PATTERNS, SUMMARY, WARMUP, scan
+from app.providers import pattern_engine
 
 router = APIRouter(prefix="/patterns", tags=["patterns"])
 DAY = 86400
@@ -25,8 +25,7 @@ Basis = Literal["daily", "chart"]
 
 @router.get("")
 def list_patterns() -> list[dict]:
-    return neutral_all([dict(id=p.id, title=p.title, group=p.group, short=p.short, color=p.color, rule=p.rule, about=p.about,
-                 summary=SUMMARY.get(p.id, "")) for p in PATTERNS])
+    return neutral_all(pattern_engine().catalog())
 
 
 def _empty() -> dict:
@@ -37,22 +36,23 @@ def run_patterns(session, sym_id: int, tf: Timeframe, ids: set[str], limit: int,
     """Pattern hits for the chart's last `limit` bars of `tf` (see the module docstring for `basis`)."""
     if not ids:
         return _empty()
+    eng = pattern_engine()
     if basis == "chart" or tf.name == "1D":
-        bars = get_bars(session, sym_id, tf, limit=limit + WARMUP)
+        bars = get_bars(session, sym_id, tf, limit=limit + eng.warmup)
         if not len(bars):
             return _empty()
-        return scan(bars.t, bars.o, bars.h, bars.l, bars.c, bars.v, ids, max(0, len(bars) - limit))
+        return eng.scan(bars.t, bars.o, bars.h, bars.l, bars.c, bars.v, ids, max(0, len(bars) - limit))
 
     chart = get_bars(session, sym_id, tf, limit=limit)
     if not len(chart):
         return _empty()
     t0 = int(chart.t[0])
     # daily bars from WARMUP trading days before the chart's first bar (~1.6 calendar days per trading day)
-    daily = get_bars(session, sym_id, TIMEFRAMES["1D"], limit=20_000, frm=t0 - int(WARMUP * 1.6) * DAY)
+    daily = get_bars(session, sym_id, TIMEFRAMES["1D"], limit=20_000, frm=t0 - int(eng.warmup * 1.6) * DAY)
     if not len(daily):
         return _empty()
     first = int(np.searchsorted(daily.t, t0 - DAY + 1))  # the daily bar that contains the chart's first bar
-    out = scan(daily.t, daily.o, daily.h, daily.l, daily.c, daily.v, ids, first)
+    out = eng.scan(daily.t, daily.o, daily.h, daily.l, daily.c, daily.v, ids, first)
     out["markers"] = _place(out["markers"], chart.t, tf)
     return out
 
@@ -98,7 +98,7 @@ def scan_patterns(
 ) -> dict:
     """Patterns present in the chart's last `limit` bars (the bars /history returns): markers, shapes, levels."""
     want = {x for x in ids.split(",") if x}
-    bad = want - set(BY_ID)
+    bad = want - pattern_engine().ids()
     if bad:
         raise HTTPException(400, f"unknown pattern ids {sorted(bad)}")
     sym = symbol_or_404(session, symbol)
@@ -119,7 +119,7 @@ def count_patterns(
     not; counts signal days, so several hits inside one weekly/monthly bar each count. sr = number of levels."""
     sym = symbol_or_404(session, symbol)
     timeframe = timeframe_or_400(tf)
-    counts = {p.id: 0 for p in PATTERNS}
+    counts = {pid: 0 for pid in sorted(pattern_engine().ids())}
     out = run_patterns(session, sym.id, timeframe, set(counts), limit, basis)
     for m in out["markers"]:
         counts[m["pattern"]] += m.get("count", 1)

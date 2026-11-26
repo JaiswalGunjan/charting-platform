@@ -26,7 +26,10 @@ OnTick = Callable[[Tick], None]
 
 
 class TickSource(Protocol):
+    """A live price feed. `feed` says what it delivers: "live" (real trades, saved as bars), "simulated" (made up,
+    never saved over real history) or "none" (no ticks: quotes stay at the last close)."""
     name: str
+    feed: str
 
     async def start(self, on_tick: OnTick) -> None: ...
     async def stop(self) -> None: ...
@@ -40,6 +43,7 @@ class SyntheticTickSource:
     Runs 24x7 so you can see live updates in dev outside market hours.
     """
     name = "synthetic"
+    feed = "simulated"
 
     def __init__(self, interval_s: float = 0.5, tick_vol: float = 0.0004, seed: int | None = None):
         self.interval_s = interval_s
@@ -87,6 +91,7 @@ class SyntheticTickSource:
 class KiteTickSource:
     """Zerodha KiteTicker (WebSocket) bridged into asyncio. Private prototyping only."""
     name = "kite"
+    feed = "live"
 
     def __init__(self, settings: Settings):
         from kiteconnect import KiteTicker
@@ -147,6 +152,7 @@ class KiteTickSource:
 class StaticTickSource:
     """No ticks at all: quotes stay at the last real close (end-of-day data without a live feed)."""
     name = "static"
+    feed = "none"
 
     async def start(self, on_tick: OnTick) -> None:
         pass
@@ -164,6 +170,7 @@ class StaticTickSource:
 class ManualTickSource:
     """For tests: ticks are pushed explicitly with `emit`."""
     name = "manual"
+    feed = "live"
 
     def __init__(self):
         self.subscribed: dict[str, float | None] = {}
@@ -191,7 +198,83 @@ class ManualTickSource:
         self._on_tick(tick)
 
 
+class RoutedTickSource:
+    """A tick source per exchange (TICK_SOURCES): e.g. Kite for NSE/BSE, a US vendor for NYSE/NASDAQ, a crypto
+    exchange's WebSocket for crypto. Exchanges not named use the default source. Every source feeds the same
+    callback; the live service, the WebSocket and the UI do not know which one a tick came from."""
+
+    name = "routed"
+
+    def __init__(self, default: TickSource, routes: dict[str, TickSource]):
+        self.default = default
+        self.routes = {k.upper(): v for k, v in routes.items()}
+
+    @property
+    def feed(self) -> str:
+        return self.default.feed
+
+    def source_for(self, exchange: str) -> TickSource:
+        return self.routes.get(exchange.upper(), self.default)
+
+    def feed_for(self, exchange: str) -> str:
+        return self.source_for(exchange).feed
+
+    def _all(self) -> list[TickSource]:
+        out: list[TickSource] = []
+        for s in [self.default, *self.routes.values()]:
+            if all(s is not x for x in out):
+                out.append(s)
+        return out
+
+    async def start(self, on_tick: OnTick) -> None:
+        for s in self._all():
+            await s.start(on_tick)
+
+    async def stop(self) -> None:
+        for s in self._all():
+            await s.stop()
+
+    async def subscribe(self, sym: SymbolInfo, last_price: float | None) -> None:
+        await self.source_for(sym.exchange).subscribe(sym, last_price)
+
+    async def unsubscribe(self, sym: SymbolInfo) -> None:
+        await self.source_for(sym.exchange).unsubscribe(sym)
+
+
+def feed_of(source: TickSource, exchange: str) -> str:
+    """What `source` delivers for `exchange`: live, simulated or none."""
+    fn = getattr(source, "feed_for", None)
+    return fn(exchange) if fn else getattr(source, "feed", "live")
+
+
+def _one_source(choice: str, settings: Settings) -> TickSource:
+    built_in = {"kite": lambda: KiteTickSource(settings),
+                "synthetic": lambda: SyntheticTickSource(interval_s=settings.synthetic_tick_interval_ms / 1000),
+                "static": StaticTickSource}
+    if choice in built_in:
+        return built_in[choice]()
+    from app.providers import load
+
+    return load("tick_source", choice)              # "package.module:Class", made with no arguments
+
+
 def make_tick_source(settings: Settings) -> TickSource:
+    """The feed: TICK_SOURCES routes exchanges to sources ("NSE=kite,NYSE=mypkg.vendor:Ticks"); the rest (or every
+    exchange, when it is empty) get the default below."""
+    default = _default_source(settings)
+    routes = {}
+    for part in [x.strip() for x in settings.tick_sources.split(",") if x.strip()]:
+        ex, _, choice = part.partition("=")
+        if not choice:
+            raise ValueError(f"TICK_SOURCES entry '{part}': use EXCHANGE=source, e.g. NSE=kite")
+        routes[ex.strip().upper()] = choice.strip()
+    if not routes:
+        return default
+    made: dict[str, TickSource] = {}
+    return RoutedTickSource(default, {ex: made.setdefault(c, _one_source(c, settings)) for ex, c in routes.items()})
+
+
+def _default_source(settings: Settings) -> TickSource:
     if settings.data_source == "kite":
         return KiteTickSource(settings)
     if settings.simulate_ticks:

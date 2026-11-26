@@ -107,11 +107,14 @@ def _utc_offset(tz: str, utc_day: int) -> int:
 
 IST_MARKET = Market("Asia/Kolkata", 9 * 60 + 15)
 US_MARKET = Market("America/New_York", 9 * 60 + 30)
-MARKETS = {"NSE": IST_MARKET, "BSE": IST_MARKET, "NASDAQ": US_MARKET, "NYSE": US_MARKET}
 
 
 def market_for(exchange: str) -> Market:
-    return MARKETS.get(exchange.upper(), IST_MARKET)
+    """The session anchor of an exchange, from the market registry (app/markets.toml)."""
+    from app.markets import market
+
+    m = market(exchange)
+    return Market(m.timezone, m.open_minute)
 
 
 def local_day(ts, market: Market = IST_MARKET) -> np.ndarray:

@@ -2,13 +2,12 @@
 
 For each exchange and timeframe (daily, or weekly built from the daily bars) the bars are read in batches of
 symbols (one query per batch instead of one per symbol), the pattern rules run on the last bar only, and the
-result is saved as JSON under backend/data/screens/ so the dashboard opens instantly. Symbols whose last bar is
+result is kept by the screen store (SCREEN_STORE; built in: JSON files under backend/data/screens/) so the dashboard
+opens instantly. The patterns come from the pattern engine in use (PATTERN_ENGINE). Symbols whose last bar is
 older than the exchange's latest session (delisted, suspended) are skipped. Support/resistance levels are not a
 signal, so they are not screened.
 """
 import calendar
-import json
-import re
 import logging
 import time
 from collections.abc import Callable
@@ -17,23 +16,21 @@ from datetime import date
 from pathlib import Path
 
 import numpy as np
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.marketdata.timeframes import TIMEFRAMES, bucket_starts, market_for, resample
-from app.models import Candle, Symbol
-from app.patterns.engine import PATTERNS, scan
+from app.models import Symbol
+from app.patterns.store import SCREEN_DIR, JsonScreenStore, screen_path, screens_dir, session_date  # noqa: F401
+from app.providers import bar_store, pattern_engine, screen_store
 
 log = logging.getLogger(__name__)
 DAY = 86400
 SCREEN_TFS = ("1D", "1W")
-SCREEN_IDS = {p.id for p in PATTERNS} - {"sr"}
 # daily bars read per symbol: enough warm-up for the daily rules, and ~260 weeks for the weekly ones
 HISTORY_DAYS = {"1D": 600, "1W": 1900}          # calendar days
 MIN_BARS = 60
 BATCH = 300                                    # symbols per query
-SCREEN_DIR = Path(__file__).resolve().parents[2] / "data" / "screens"
-DATE_RE = re.compile(r"\d{4}-\d{2}-\d{2}")
 
 
 @dataclass
@@ -51,24 +48,22 @@ class Progress:
 
 def latest_hits(t, o, h, l, c, v) -> list[dict]:  # noqa: E741
     """Pattern hits on the last bar only (the rules are causal: a bar's result never depends on later bars)."""
-    out = scan(t, o, h, l, c, v, SCREEN_IDS, first=len(t) - 1)
+    eng = pattern_engine()
+    out = eng.scan(t, o, h, l, c, v, eng.signal_ids(), first=len(t) - 1)
     return [m for m in out["markers"] if m["t"] == int(t[-1])]
 
 
-def screens_dir() -> Path:
-    """Where screens are saved: SCREENS_DIR if set (the end-to-end tests use their own), else SCREEN_DIR."""
-    from app.config import get_settings
+def screen_ids() -> set[str]:
+    """The patterns a screen looks for: every signal pattern of the engine in use."""
+    return pattern_engine().signal_ids()
 
-    d = get_settings().screens_dir
-    return Path(d) if d else SCREEN_DIR
+
+def _store(root: Path | None):
+    """The screen store in use; an explicit folder (tests, tools) gets a JSON store there."""
+    return JsonScreenStore(root) if root is not None else screen_store()
 
 
 IST = 19800
-
-
-def session_date(ts: int) -> str:
-    """ISO trading date of a daily bar (daily bars are stamped at IST midnight of their date, every exchange)."""
-    return time.strftime("%Y-%m-%d", time.gmtime(int(ts) + IST))
 
 
 def session_ts(day: str) -> int:
@@ -76,28 +71,9 @@ def session_ts(day: str) -> int:
     return int(calendar.timegm(time.strptime(day, "%Y-%m-%d"))) - IST
 
 
-def screen_path(exchange: str, tf: str, root: Path | None = None, day: str | None = None) -> Path:
-    """The newest screen (EX_TF.json), or the screen of one session (EX_TF_YYYY-MM-DD.json)."""
-    return (root or screens_dir()) / (f"{exchange.upper()}_{tf}.json" if not day else f"{exchange.upper()}_{tf}_{day}.json")
-
-
-def _read(p: Path) -> dict | None:
-    if not p.is_file():
-        return None
-    try:
-        return json.loads(p.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return None
-
-
 def saved_screen(exchange: str, tf: str, day: str, root: Path | None = None) -> dict | None:
     """The screen saved for exactly this session, or None."""
-    res = _read(screen_path(exchange, tf, root, day))
-    if res is None:                           # the newest screen may be that session (saved before dated files)
-        res = _read(screen_path(exchange, tf, root))
-        if not res or not res.get("last_session") or session_date(res["last_session"]) != day:
-            return None
-    return res
+    return _store(root).read(exchange, tf, day)
 
 
 def load_screen(exchange: str, tf: str, root: Path | None = None, day: str | None = None) -> dict | None:
@@ -105,7 +81,7 @@ def load_screen(exchange: str, tf: str, root: Path | None = None, day: str | Non
     mid-week day for weekly) gets the nearest saved session before it: the same week for weekly, within 4 days for
     daily."""
     if not day:
-        return _read(screen_path(exchange, tf, root))
+        return _store(root).read(exchange, tf)
     res = saved_screen(exchange, tf, day, root)
     if res is not None:
         return res
@@ -121,36 +97,20 @@ def load_screen(exchange: str, tf: str, root: Path | None = None, day: str | Non
 
 def screen_dates(exchange: str, tf: str, root: Path | None = None) -> list[str]:
     """Session dates with a saved screen, newest first."""
-    d = root or screens_dir()
-    pre = f"{exchange.upper()}_{tf}_"
-    out = {f.stem[len(pre):] for f in d.glob(f"{pre}*.json") if DATE_RE.fullmatch(f.stem[len(pre):])}
-    latest = _read(screen_path(exchange, tf, root))
-    if latest and latest.get("last_session"):
-        out.add(session_date(latest["last_session"]))
-    return sorted(out, reverse=True)
+    return _store(root).dates(exchange, tf)
 
 
 def resolve_session(session_factory: sessionmaker, exchange: str, day: str | None = None) -> str | None:
     """The trading date a screen of `day` would use: the last session on or before it (default: the latest)."""
     with session_factory() as s:
-        cond = [Candle.tf == "1D", Candle.symbol_id.in_(select(Symbol.id).where(Symbol.exchange == exchange.upper()))]
-        upto = session_ts(day) if day else int(time.time())
-        if day:
-            cond.append(Candle.ts <= upto)
-        # look in the last 40 days first: a bounded range reads only the newest chunks (TimescaleDB) / index pages;
-        # the whole history only when nothing is that recent
-        ts = s.scalar(select(func.max(Candle.ts)).where(*cond, Candle.ts >= upto - 40 * DAY))
-        if ts is None:
-            ts = s.scalar(select(func.max(Candle.ts)).where(*cond))
+        ts = bar_store().last_time(s, exchange, "1D", session_ts(day) if day else int(time.time()))
     return session_date(ts) if ts is not None else None
 
 
 def sessions(session_factory: sessionmaker, exchange: str, since: str) -> list[str]:
     """Trading dates of an exchange on or after `since` (from its daily bars), newest first."""
     with session_factory() as s:
-        ts = s.execute(select(Candle.ts).distinct().where(
-            Candle.tf == "1D", Candle.ts >= session_ts(since),
-            Candle.symbol_id.in_(select(Symbol.id).where(Symbol.exchange == exchange.upper())))).scalars().all()
+        ts = bar_store().times(s, exchange, "1D", session_ts(since))
     return sorted({session_date(t) for t in ts}, reverse=True)
 
 
@@ -179,14 +139,12 @@ def run_screen(session_factory: sessionmaker, exchange: str, tf: str, root: Path
     pr = progress or Progress()
     pr.exchange, pr.tf, pr.done, pr.errors = exchange, tf, 0, []
     market = market_for(exchange)
+    store = bar_store()
     with session_factory() as s:
         syms = s.execute(select(Symbol.id, Symbol.ticker, Symbol.name, Symbol.type)
                          .where(Symbol.exchange == exchange).order_by(Symbol.ticker)).all()
-        cond = [Candle.tf == "1D", Candle.symbol_id.in_(select(Symbol.id).where(Symbol.exchange == exchange))]
-        if day:
-            cond.append(Candle.ts <= session_ts(day))
-        last_day = s.scalar(select(func.max(Candle.ts)).where(*cond))
-        newest = s.scalar(select(func.max(Candle.ts)).where(*cond[:2])) if day else last_day
+        last_day = store.last_time(s, exchange, "1D", session_ts(day) if day else None)
+        newest = store.last_time(s, exchange, "1D") if day else last_day
     pr.total = len(syms)
     rows: list[dict] = []
     scanned = 0
@@ -199,12 +157,8 @@ def run_screen(session_factory: sessionmaker, exchange: str, tf: str, root: Path
     for k in range(0, len(ids), BATCH):
         chunk = ids[k:k + BATCH]
         with session_factory() as s:
-            data = s.execute(select(Candle.symbol_id, Candle.ts, Candle.o, Candle.h, Candle.l, Candle.c, Candle.v)
-                             .where(Candle.tf == "1D", Candle.symbol_id.in_(chunk), Candle.ts >= since,
-                                    Candle.ts <= last_day)
-                             .order_by(Candle.symbol_id, Candle.ts)).all()
-        if data:
-            arr = np.array(data, dtype=float)
+            arr = store.read_many(s, chunk, "1D", since, int(last_day))
+        if len(arr):
             sid_col = arr[:, 0].astype(np.int64)
             cuts = np.flatnonzero(np.r_[True, sid_col[1:] != sid_col[:-1], True])
             for a, z in zip(cuts[:-1], cuts[1:]):
@@ -249,21 +203,7 @@ def run_screen(session_factory: sessionmaker, exchange: str, tf: str, root: Path
 
 def _save(res: dict, exchange: str, tf: str, root: Path | None, newest: bool) -> dict:
     """Saved under its session date; the newest session is also the dashboard's default screen."""
-    if newest:
-        # the screen being replaced as the newest keeps its own dated file (older screens were saved only there)
-        old = _read(screen_path(exchange, tf, root))
-        if old and old.get("last_session") and old.get("last_session") != res.get("last_session"):
-            keep = screen_path(exchange, tf, root, session_date(old["last_session"]))
-            if not keep.exists():
-                keep.parent.mkdir(parents=True, exist_ok=True)
-                keep.write_text(json.dumps(dict(old, session=session_date(old["last_session"]))), encoding="utf-8")
-    paths = ([screen_path(exchange, tf, root, res["session"])] if res.get("session") else []) + \
-        ([screen_path(exchange, tf, root)] if newest else [])
-    for p in paths:
-        p.parent.mkdir(parents=True, exist_ok=True)
-        tmp = p.with_suffix(".tmp")
-        tmp.write_text(json.dumps(res), encoding="utf-8")
-        tmp.replace(p)
+    _store(root).write(dict(res, exchange=exchange, tf=tf), newest)
     log.info("screen %s %s: %d symbols with patterns of %d scanned", exchange, tf, len(res["rows"]), res["scanned"])
     return res
 
@@ -297,13 +237,9 @@ def turnover_figures(session_factory: sessionmaker, exchange: str, tickers: list
             Symbol.exchange == exchange.upper(), Symbol.ticker.in_(tickers))).all())
         if not ids:
             return {}
-        data = s.execute(select(Candle.symbol_id, Candle.ts, Candle.h, Candle.l, Candle.c, Candle.v)
-                         .where(Candle.tf == "1D", Candle.symbol_id.in_(list(ids)), Candle.ts >= since,
-                                Candle.ts <= int(last_ts))
-                         .order_by(Candle.symbol_id, Candle.ts)).all()
-    if not data:
+        arr = bar_store().read_many(s, list(ids), "1D", since, int(last_ts), cols=("ts", "h", "l", "c", "v"))
+    if not len(arr):
         return {}
-    arr = np.array(data, dtype=float)
     sid = arr[:, 0].astype(np.int64)
     cuts = np.flatnonzero(np.r_[True, sid[1:] != sid[:-1], True])
     for a, z in zip(cuts[:-1], cuts[1:]):

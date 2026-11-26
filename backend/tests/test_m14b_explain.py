@@ -1,7 +1,7 @@
 """'Why this trade' for SwingScanner signals: the six-part brief and the rulebook lookup."""
 import json
 
-from app.scanner_explain import rulebook
+from app.adapters.swingscanner.explain import rulebook
 from tests.test_m14_scanner import scan_root  # noqa: F401  (fixture)
 
 RULES_S4 = 'NL = "x"\nRULES = [\n    (33, "SH", "Bad break recovery (BBR): price closes below the 50-day SMA.", "c"),\n    (34, "SH", NL, "c"),\n]\n'
@@ -70,7 +70,7 @@ def test_position_size_follows_the_users_equity(client, scan_root):  # noqa: F81
 
 
 def test_position_cap_at_45_percent():
-    from app.scanner_explain import position
+    from app.adapters.swingscanner.explain import position
 
     assert position(1_000_000, 919.5, 891.91, 1.0, 0.5) == (181, "risk")
     assert position(1_000_000, 100, 99.5, 1.0, 1.0) == (4500, "max 45% of the portfolio")

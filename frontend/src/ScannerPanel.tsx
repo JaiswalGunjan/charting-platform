@@ -1,28 +1,28 @@
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { API, api, type ScannerScan, type ScannerSignal, type ScannerStatus, type SignalExplanation } from "./api";
 import { fmt } from "./format";
-import { dollars, positionSize, rupees, type Size } from "./sizing";
+import { positionSize, type Size } from "./sizing";
+import { currencyOf, currencySymbol, markets, money } from "./markets";
 
 type View = "buy" | "near";
-const MARKET_ORDER = ["NSE", "BSE", "NYSE", "NASDAQ"];
 const VIEW_LABEL: Record<View, string> = { buy: "Breakouts", near: "Near misses" };   // no buy / sell words (SEBI)
-/** The portfolio box per currency, as a full amount: NSE/BSE scans in rupees, NYSE/NASDAQ scans in dollars. */
-type Cur = "INR" | "USD";
-const CUR: Record<Cur, { unit: number; def: number; key: string; sym: string; word: string; fmt: (v: number) => string }> = {
-  INR: { unit: 1, def: 1_000_000, key: "scanner.equity", sym: "₹", word: "", fmt: rupees },
-  USD: { unit: 1, def: 100_000, key: "scanner.equityUsd", sym: "$", word: "", fmt: dollars },
-};
-const US_MARKETS = new Set(["NYSE", "NASDAQ"]);
+/** The portfolio box per currency (the scan market's, from the market registry), as a full amount. */
+type Cur = string;
+export const equityKey = (cur: Cur) => (cur === "INR" ? "scanner.equity" : cur === "USD" ? "scanner.equityUsd"
+  : `scanner.equity.${cur}`);                                   // the first two keep the keys saved before
+export const defaultEquity = (cur: Cur) => (cur === "INR" ? 1_000_000 : 100_000);
+const curInfo = (cur: Cur) => ({ unit: 1, def: defaultEquity(cur), key: equityKey(cur), sym: currencySymbol(cur), word: "",
+  fmt: (v: number) => money(v, cur) });
 const DEFAULT_RISK = 1;           // % of the portfolio risked per trade
 
 const niceDate = (d: string) =>
   new Date(`${d}T00:00:00Z`).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
 
-/** Sidebar tab connected to the owner's SwingScanner: past scans (its saved history) with the trade plan of every
+/** The setup scanner's results (whichever scanner the backend uses; today the owner's SwingScanner): past scans (its saved history) with the trade plan of every
  * signal (entry, stop loss, quantity), filtered by setup, with "why this trade"; picked by date, then market.
  * Clicking a row opens its chart with the entry and stop-loss lines. */
 /** A signal to open on arrival (a report chart link: /?scan=...&symbol=...&setup=...). */
-export interface ScanOpen { scan: string; symbol: string; setup: string; near: boolean }
+export interface ScanOpen { scan: string; symbol: string; setup: string; near: boolean; scanner?: string }
 
 /** The saved scan of a market for a date: that session, else the one before it within 4 days (a weekend or holiday);
  * no date = the market's newest scan. `scans` are newest first. */
@@ -36,9 +36,10 @@ export function scanFor<T extends { market: string; date: string }>(scans: T[], 
 }
 
 /** The chart link of a scanner signal: the chart tab opens it with Entry / SL (App reads ?scan=...). */
-export function signalUrl(scanId: string, s: ScannerSignal): string {
+export function signalUrl(scanId: string, s: ScannerSignal, scanner?: string): string {
   const q = new URLSearchParams({ scan: scanId, symbol: s.ticker, setup: s.setup });
   if (!s.valid) q.set("near", "1");
+  if (scanner) q.set("scanner", scanner);                     // not the default setup scanner
   return `/?${q}`;
 }
 
@@ -50,23 +51,22 @@ export default function ScannerPanel(props: {
   page?: boolean;                                              // full-page Setup Screener (SetupPage.tsx)
 }) {
   const [status, setStatus] = useState<ScannerStatus | null>(null);
+  // the setup scanner shown ("" = the default); several can be in use
+  const [scanner, setScanner] = useState<string>(() => props.open?.scanner ?? "");
+  const sc = scanner || undefined;
   const [scanId, setScanId] = useState<string>("");
   const [scan, setScan] = useState<ScannerScan | null>(null);
   const [view, setView] = useState<View>("buy");
   const [mkt, setMkt] = useState("");                  // the picked market ("" until the scans are listed)
   const [day, setDay] = useState("");                  // the picked date ("" = the market's newest scan)
-  const cur: Cur = US_MARKETS.has(mkt || scanId.split("_")[0]) ? "USD" : "INR";
-  const C = CUR[cur];
-  const [eqBy, setEqBy] = useState<Record<Cur, number>>(() => ({
-    INR: Number(localStorage.getItem(CUR.INR.key)) || CUR.INR.def,
-    USD: Number(localStorage.getItem(CUR.USD.key)) || CUR.USD.def,
-  }));
+  const cur: Cur = currencyOf(mkt || scanId.split("_")[0] || markets()[0].code);
+  const C = curInfo(cur);
+  const savedEquity = (c: Cur) => Number(localStorage.getItem(equityKey(c))) || defaultEquity(c);
+  const [eqBy, setEqBy] = useState<Record<Cur, number>>({});
   // what is typed, per currency (the full amount)
-  const [eqTextBy, setEqTextBy] = useState<Record<Cur, string>>(() => ({
-    INR: String(+(eqBy.INR / CUR.INR.unit).toFixed(4)), USD: String(eqBy.USD),
-  }));
-  const equity = eqBy[cur];
-  const eqText = eqTextBy[cur];
+  const [eqTextBy, setEqTextBy] = useState<Record<Cur, string>>({});
+  const equity = eqBy[cur] ?? savedEquity(cur);
+  const eqText = eqTextBy[cur] ?? String(equity);
   const setEqText = (t: string) => setEqTextBy((x) => ({ ...x, [cur]: t }));
   const money = C.fmt;
   const [riskPct, setRiskState] = useState<number>(() => Number(localStorage.getItem("scanner.riskPct")) || DEFAULT_RISK);
@@ -110,7 +110,7 @@ export default function ScannerPanel(props: {
   const explainFor = (s: ScannerSignal, near: boolean, scroll: boolean) => {
     setWhyErr("");
     api.scannerExplain(scanId, s.ticker, s.setup, near, equity > 0 ? equity : undefined,
-                       riskPct > 0 ? riskPct : undefined).then((e) => {
+                       riskPct > 0 ? riskPct : undefined, sc).then((e) => {
       setWhy(e);
       if (scroll) window.setTimeout(() => whyRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" }), 50);
     }, (e) => setWhyErr(String(e.message ?? e)));
@@ -140,9 +140,9 @@ export default function ScannerPanel(props: {
   }, [equity, riskPct]); // eslint-disable-line react-hooks/exhaustive-deps
   /** Reload the saved scans. A slow reply (the status call waits on the scanner's server) must not undo a market
    * or date picked meanwhile, so the defaults are applied only to what is still unset. */
-  const loadStatus = useCallback(async () => {
+  const loadStatus = useCallback(async (which: string = scanner) => {
     try {
-      const st = await api.scanner();
+      const st = await api.scanner(which || undefined);
       setStatus(st);
       const want = props.open && st.scans.find((x) => x.id === props.open!.scan);
       if (want) {
@@ -150,14 +150,26 @@ export default function ScannerPanel(props: {
         setDay(want.date);
       } else {
         // default: NSE (else the first market in NSE, BSE, NYSE, NASDAQ order that has scans), newest scan
-        setMkt((cur) => cur || MARKET_ORDER.find((m) => st.scans.some((x) => x.market === m)) || "NSE");
+        setMkt((cur) => cur || markets().map((x) => x.code).find((m) => st.scans.some((x) => x.market === m))
+          || st.scans[0]?.market || markets()[0].code);
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [scanner]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => void loadStatus(), []); // eslint-disable-line react-hooks/exhaustive-deps
+  /** Another setup scanner: its own scans, markets and dates. */
+  const switchScanner = (name: string) => {
+    if (name === scanner) return;
+    setScanner(name);
+    setStatus(null);
+    setScanId("");
+    setMkt("");
+    setDay("");
+    setJob(null);
+    void loadStatus(name);
+  };
   // the scan of the picked market and date
   const dataDates = status?.markets?.find((m) => m.market === mkt)?.dates ?? [];   // the scanner's sessions, newest first
   const target = status && mkt ? scanFor(status.scans, mkt, day, dataDates) : null;
@@ -172,7 +184,7 @@ export default function ScannerPanel(props: {
     setWhy(null);
     setSetupFilter([]);
     setPicked(null);
-    api.scannerScan(scanId).then((s) => {
+    api.scannerScan(scanId, sc).then((s) => {
       setScan(s);
       setView(s.signals.length ? "buy" : "near");
     }, (e) => setError(String(e.message ?? e)));
@@ -200,12 +212,12 @@ export default function ScannerPanel(props: {
     const d = day || status.markets?.find((x) => x.market === m)?.dates?.[0] || "";
     setError("");
     try {
-      await api.scannerRun(m, d || undefined);
+      await api.scannerRun(m, d || undefined, sc);
       setJob({ state: "running", line: `Scanning ${m} for ${d}…` });
       let since = 0;
       polling.current = window.setInterval(async () => {
         try {
-          const j = await api.scannerJob(since);
+          const j = await api.scannerJob(since, sc);
           since = j.next;
           const line = j.log.length ? j.log[j.log.length - 1] : undefined;
           setJob((old) => ({ state: j.state, line: line ?? old?.line ?? "", hint: j.hint }));
@@ -226,11 +238,27 @@ export default function ScannerPanel(props: {
     }
   };
 
-  if (!status) return <div className="panel hint">{error || "Connecting to the scanner…"}</div>;
-  if (!status.configured) return <div className="panel hint">{status.msg}</div>;
+  const panelClass = `panel scanner${props.page ? " page" : ""}`;
+  if (!status) return <div className={`${panelClass} hint`}>{error || "Connecting to the scanner…"}</div>;
+  // several setup scanners: pick one (shown even when the picked one is not set up, to switch back)
+  const scannerPick = (status.scanners?.length ?? 0) > 1 ? (
+        <div className="field scan-pick" role="group" aria-label="Setup scanner">
+          <span className="muted small">Scanner</span>
+          <nav className="tabs inline seg">
+            {status.scanners!.map((x, i) => (
+              <button key={x.name} className={(scanner || status.scanners![0].name) === x.name ? "active" : ""}
+                onClick={() => switchScanner(i === 0 ? "" : x.name)} title={`Setups found by ${x.title}`}>{x.title}</button>
+            ))}
+          </nav>
+        </div>
+  ) : null;
+  if (!status.configured) return <div className={panelClass}>{scannerPick}<div className="hint">{status.msg}</div></div>;
 
   // markets: NSE, NYSE, NASDAQ always (greyed out without scans), BSE when it has scans
-  const shownMarkets = MARKET_ORDER.filter((m) => m !== "BSE" || status.scans.some((x) => x.market === m));
+  // the registry's markets this scanner has scans or data for (a market it never scans is not listed)
+  const shownMarkets = [...new Set([...markets().map((x) => x.code), ...status.scans.map((x) => x.market)])]
+    .filter((m) => status.scans.some((x) => x.market === m) || status.markets?.some((x) => x.market === m)
+      || (markets().find((x) => x.code === m)?.screen ?? false));
   const marketDates = status.scans.filter((x) => x.market === mkt).map((x) => x.date);   // newest first
   // run only what is not saved: the picked date, or the newest session with data when no scan of it is saved
   const runDate = day || dataDates[0] || "";
@@ -260,18 +288,20 @@ export default function ScannerPanel(props: {
   const count = (v: View) => (!scan ? 0 : v === "buy" ? scan.signals.length : scan.near_misses.length);
   const budget = scan ? equity * (riskPct / 100) * riskMult : 0;
   const ncols = view === "buy" ? 6 : 5;
+  const scannerName = status.title || "the scanner";      // whichever setup scanner the backend uses
 
   return (
     <div className={`panel scanner${props.page ? " page" : ""}`}>
       <div className="panel-head">
-        <span title="Breakouts from your SwingScanner rulebook, with entry, stop and quantity">Setup Scanner</span>
+        <span title={`Breakouts from ${scannerName}, with entry, stop and quantity`}>Setup Scanner</span>
         <span className={`small ${status.online ? "up" : "muted"}`}
-          title={status.online ? "SwingScanner.exe is running: new scans can be run from here"
-            : "Start SwingScanner.exe to run new scans; past scans are still shown"}>
+          title={status.online ? `${scannerName} is running: new scans can be run from here`
+            : `Start ${scannerName} to run new scans; past scans are still shown`}>
           ● {status.online ? "scanner running" : "scanner offline"}
         </span>
       </div>
 
+      {scannerPick}
       <div className="field scan-pick today-steps">
         <label className="step">
           <span className="step-n">1</span> Date
@@ -297,7 +327,7 @@ export default function ScannerPanel(props: {
           disabled={running || !runnable || !status.online} onClick={run}
           title={runSaved ? `Already scanned for ${niceDate(runDate)}: the saved scan is shown`
             : !runnable ? "No data for this date in the scanner's folder"
-            : !status.online ? "Start SwingScanner.exe to run a scan"
+            : !status.online ? `Start ${scannerName} to run a scan`
             : `Scan ${mkt} for ${niceDate(runDate)} and save it`}>
           {running ? "Scanning…" : runSaved || (!runnable && !!target) ? "✓ Scanned" : `▶ Run setup scan${runDate ? ` · ${niceDate(runDate)}` : ""}`}
         </button>
@@ -306,7 +336,7 @@ export default function ScannerPanel(props: {
       {job?.state === "error" && job.hint && <div className="hint scan-hint">{job.hint}</div>}
       {mkt && !target && (
         <div className="hint scan-missing">No {mkt} scan is saved for {niceDate(day || runDate)}.{" "}
-          {runnable ? (status.online ? "Run it with the button above, or pick another date." : "Start SwingScanner.exe to run it, or pick another date.")
+          {runnable ? (status.online ? "Run it with the button above, or pick another date." : `Start ${scannerName} to run it, or pick another date.`)
             : "Pick another date, or "}
           {!runnable && <button className="link" onClick={() => setDay("")}>the latest scan</button>}{!runnable && "."}</div>
       )}
@@ -435,7 +465,7 @@ export default function ScannerPanel(props: {
                   <td>{view === "near" ? "" : s.rank ?? ""}</td>
                   <td>
                     <span className="muted twisty">{open ? "▾" : "▸"}</span>
-                    <a className="scan-sym" href={signalUrl(scanId, s)} target="charting-lab" title={`Open the ${s.ticker} chart`}
+                    <a className="scan-sym" href={signalUrl(scanId, s, sc)} target="charting-lab" title={`Open the ${s.ticker} chart`}
                       onClick={(e) => e.stopPropagation()}>{s.ticker}</a>{" "}
                     <span className="tag" title={s.setup_name}>{s.setup}</span>
                     {setupsOf(s).slice(1).map((c) => (

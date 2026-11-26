@@ -1,0 +1,3423 @@
+{
+ "components": {
+  "schemas": {
+   "AlertIn": {
+    "properties": {
+     "condition": {
+      "$ref": "#/components/schemas/Condition"
+     },
+     "message": {
+      "default": "",
+      "maxLength": 512,
+      "title": "Message",
+      "type": "string"
+     },
+     "once": {
+      "default": true,
+      "title": "Once",
+      "type": "boolean"
+     },
+     "symbol": {
+      "title": "Symbol",
+      "type": "string"
+     }
+    },
+    "required": [
+     "symbol",
+     "condition"
+    ],
+    "title": "AlertIn",
+    "type": "object"
+   },
+   "AlertOut": {
+    "properties": {
+     "condition": {
+      "$ref": "#/components/schemas/Condition"
+     },
+     "created_at": {
+      "title": "Created At",
+      "type": "number"
+     },
+     "id": {
+      "title": "Id",
+      "type": "integer"
+     },
+     "message": {
+      "title": "Message",
+      "type": "string"
+     },
+     "once": {
+      "title": "Once",
+      "type": "boolean"
+     },
+     "status": {
+      "title": "Status",
+      "type": "string"
+     },
+     "symbol": {
+      "title": "Symbol",
+      "type": "string"
+     },
+     "triggered_at": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Triggered At"
+     }
+    },
+    "required": [
+     "id",
+     "symbol",
+     "condition",
+     "message",
+     "once",
+     "status",
+     "created_at",
+     "triggered_at"
+    ],
+    "title": "AlertOut",
+    "type": "object"
+   },
+   "AlertPatch": {
+    "properties": {
+     "message": {
+      "anyOf": [
+       {
+        "maxLength": 512,
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Message"
+     },
+     "status": {
+      "anyOf": [
+       {
+        "enum": [
+         "active",
+         "disabled"
+        ],
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Status"
+     }
+    },
+    "title": "AlertPatch",
+    "type": "object"
+   },
+   "ChartAnalysis": {
+    "properties": {
+     "key_levels": {
+      "items": {
+       "$ref": "#/components/schemas/KeyLevel"
+      },
+      "title": "Key Levels",
+      "type": "array"
+     },
+     "momentum": {
+      "title": "Momentum",
+      "type": "string"
+     },
+     "signals_conflicting": {
+      "items": {
+       "type": "string"
+      },
+      "title": "Signals Conflicting",
+      "type": "array"
+     },
+     "summary": {
+      "title": "Summary",
+      "type": "string"
+     },
+     "trend": {
+      "enum": [
+       "uptrend",
+       "downtrend",
+       "sideways"
+      ],
+      "title": "Trend",
+      "type": "string"
+     },
+     "trend_strength": {
+      "enum": [
+       "weak",
+       "moderate",
+       "strong"
+      ],
+      "title": "Trend Strength",
+      "type": "string"
+     },
+     "volatility": {
+      "title": "Volatility",
+      "type": "string"
+     },
+     "volume": {
+      "title": "Volume",
+      "type": "string"
+     },
+     "what_to_watch": {
+      "items": {
+       "type": "string"
+      },
+      "title": "What To Watch",
+      "type": "array"
+     }
+    },
+    "required": [
+     "summary",
+     "trend",
+     "trend_strength",
+     "momentum",
+     "volatility",
+     "volume",
+     "key_levels",
+     "signals_conflicting",
+     "what_to_watch"
+    ],
+    "title": "ChartAnalysis",
+    "type": "object"
+   },
+   "Condition": {
+    "properties": {
+     "op": {
+      "enum": [
+       "crosses_above",
+       "crosses_below",
+       "above",
+       "below"
+      ],
+      "title": "Op",
+      "type": "string"
+     },
+     "price": {
+      "exclusiveMinimum": 0.0,
+      "title": "Price",
+      "type": "number"
+     }
+    },
+    "required": [
+     "op",
+     "price"
+    ],
+    "title": "Condition",
+    "type": "object"
+   },
+   "CustomIn": {
+    "properties": {
+     "inputs": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/InputIn"
+      },
+      "title": "Inputs",
+      "type": "array"
+     },
+     "levels": {
+      "default": [],
+      "items": {
+       "type": "number"
+      },
+      "maxItems": 5,
+      "title": "Levels",
+      "type": "array"
+     },
+     "name": {
+      "maxLength": 80,
+      "minLength": 1,
+      "title": "Name",
+      "type": "string"
+     },
+     "overlay": {
+      "default": false,
+      "title": "Overlay",
+      "type": "boolean"
+     },
+     "plots": {
+      "items": {
+       "$ref": "#/components/schemas/PlotIn"
+      },
+      "title": "Plots",
+      "type": "array"
+     }
+    },
+    "required": [
+     "name",
+     "plots"
+    ],
+    "title": "CustomIn",
+    "type": "object"
+   },
+   "CustomOut": {
+    "properties": {
+     "id": {
+      "title": "Id",
+      "type": "string"
+     },
+     "inputs": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/InputIn"
+      },
+      "title": "Inputs",
+      "type": "array"
+     },
+     "levels": {
+      "default": [],
+      "items": {
+       "type": "number"
+      },
+      "maxItems": 5,
+      "title": "Levels",
+      "type": "array"
+     },
+     "name": {
+      "maxLength": 80,
+      "minLength": 1,
+      "title": "Name",
+      "type": "string"
+     },
+     "overlay": {
+      "default": false,
+      "title": "Overlay",
+      "type": "boolean"
+     },
+     "plots": {
+      "items": {
+       "$ref": "#/components/schemas/PlotIn"
+      },
+      "title": "Plots",
+      "type": "array"
+     },
+     "warmup": {
+      "title": "Warmup",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "name",
+     "plots",
+     "id",
+     "warmup"
+    ],
+    "title": "CustomOut",
+    "type": "object"
+   },
+   "DrawingsIn": {
+    "properties": {
+     "items": {
+      "items": {
+       "$ref": "#/components/schemas/Item"
+      },
+      "maxItems": 500,
+      "title": "Items",
+      "type": "array"
+     }
+    },
+    "required": [
+     "items"
+    ],
+    "title": "DrawingsIn",
+    "type": "object"
+   },
+   "DrawingsOut": {
+    "properties": {
+     "items": {
+      "items": {
+       "$ref": "#/components/schemas/Item"
+      },
+      "maxItems": 500,
+      "title": "Items",
+      "type": "array"
+     },
+     "symbol": {
+      "title": "Symbol",
+      "type": "string"
+     },
+     "updated_at": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Updated At"
+     }
+    },
+    "required": [
+     "items",
+     "symbol",
+     "updated_at"
+    ],
+    "title": "DrawingsOut",
+    "type": "object"
+   },
+   "EventOut": {
+    "properties": {
+     "alert_id": {
+      "title": "Alert Id",
+      "type": "integer"
+     },
+     "id": {
+      "title": "Id",
+      "type": "integer"
+     },
+     "message": {
+      "title": "Message",
+      "type": "string"
+     },
+     "price": {
+      "title": "Price",
+      "type": "number"
+     },
+     "ts": {
+      "title": "Ts",
+      "type": "number"
+     }
+    },
+    "required": [
+     "id",
+     "alert_id",
+     "ts",
+     "price",
+     "message"
+    ],
+    "title": "EventOut",
+    "type": "object"
+   },
+   "ExplainIn": {
+    "properties": {
+     "dry_run": {
+      "default": false,
+      "description": "return the context only; no LLM call",
+      "title": "Dry Run",
+      "type": "boolean"
+     },
+     "symbol": {
+      "title": "Symbol",
+      "type": "string"
+     },
+     "tf": {
+      "default": "1D",
+      "title": "Tf",
+      "type": "string"
+     },
+     "to": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "description": "analyse the chart as of this bar time (exclusive)",
+      "title": "To"
+     }
+    },
+    "required": [
+     "symbol"
+    ],
+    "title": "ExplainIn",
+    "type": "object"
+   },
+   "ExplainOut": {
+    "properties": {
+     "analysis": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/ChartAnalysis"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "context": {
+      "additionalProperties": true,
+      "title": "Context",
+      "type": "object"
+     },
+     "disclaimer": {
+      "title": "Disclaimer",
+      "type": "string"
+     },
+     "log_id": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Log Id"
+     },
+     "symbol": {
+      "title": "Symbol",
+      "type": "string"
+     },
+     "tf": {
+      "title": "Tf",
+      "type": "string"
+     },
+     "usage": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/Usage"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     }
+    },
+    "required": [
+     "symbol",
+     "tf",
+     "analysis",
+     "disclaimer",
+     "context",
+     "usage",
+     "log_id"
+    ],
+    "title": "ExplainOut",
+    "type": "object"
+   },
+   "HTTPValidationError": {
+    "properties": {
+     "detail": {
+      "items": {
+       "$ref": "#/components/schemas/ValidationError"
+      },
+      "title": "Detail",
+      "type": "array"
+     }
+    },
+    "title": "HTTPValidationError",
+    "type": "object"
+   },
+   "HistoryOut": {
+    "properties": {
+     "c": {
+      "items": {
+       "type": "number"
+      },
+      "title": "C",
+      "type": "array"
+     },
+     "h": {
+      "items": {
+       "type": "number"
+      },
+      "title": "H",
+      "type": "array"
+     },
+     "l": {
+      "items": {
+       "type": "number"
+      },
+      "title": "L",
+      "type": "array"
+     },
+     "next_to": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "description": "pass as `to` to fetch the previous page; null = no more",
+      "title": "Next To"
+     },
+     "o": {
+      "items": {
+       "type": "number"
+      },
+      "title": "O",
+      "type": "array"
+     },
+     "symbol": {
+      "title": "Symbol",
+      "type": "string"
+     },
+     "t": {
+      "description": "bar open times, epoch seconds UTC, ascending",
+      "items": {
+       "type": "integer"
+      },
+      "title": "T",
+      "type": "array"
+     },
+     "tf": {
+      "title": "Tf",
+      "type": "string"
+     },
+     "v": {
+      "items": {
+       "type": "number"
+      },
+      "title": "V",
+      "type": "array"
+     }
+    },
+    "required": [
+     "symbol",
+     "tf",
+     "t",
+     "o",
+     "h",
+     "l",
+     "c",
+     "v",
+     "next_to"
+    ],
+    "title": "HistoryOut",
+    "type": "object"
+   },
+   "IndicatorMeta": {
+    "properties": {
+     "category": {
+      "title": "Category",
+      "type": "string"
+     },
+     "id": {
+      "title": "Id",
+      "type": "string"
+     },
+     "levels": {
+      "items": {
+       "type": "number"
+      },
+      "title": "Levels",
+      "type": "array"
+     },
+     "outputs": {
+      "items": {
+       "type": "string"
+      },
+      "title": "Outputs",
+      "type": "array"
+     },
+     "overlay": {
+      "title": "Overlay",
+      "type": "boolean"
+     },
+     "params": {
+      "items": {
+       "$ref": "#/components/schemas/ParamOut"
+      },
+      "title": "Params",
+      "type": "array"
+     },
+     "plots": {
+      "items": {
+       "$ref": "#/components/schemas/PlotOut"
+      },
+      "title": "Plots",
+      "type": "array"
+     },
+     "title": {
+      "title": "Title",
+      "type": "string"
+     }
+    },
+    "required": [
+     "id",
+     "title",
+     "category",
+     "overlay",
+     "outputs",
+     "plots",
+     "params",
+     "levels"
+    ],
+    "title": "IndicatorMeta",
+    "type": "object"
+   },
+   "IndicatorOut": {
+    "properties": {
+     "id": {
+      "title": "Id",
+      "type": "string"
+     },
+     "next_to": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Next To"
+     },
+     "outputs": {
+      "additionalProperties": {
+       "items": {
+        "anyOf": [
+         {
+          "type": "number"
+         },
+         {
+          "type": "null"
+         }
+        ]
+       },
+       "type": "array"
+      },
+      "title": "Outputs",
+      "type": "object"
+     },
+     "params": {
+      "additionalProperties": {
+       "anyOf": [
+        {
+         "type": "number"
+        },
+        {
+         "type": "string"
+        }
+       ]
+      },
+      "title": "Params",
+      "type": "object"
+     },
+     "symbol": {
+      "title": "Symbol",
+      "type": "string"
+     },
+     "t": {
+      "items": {
+       "type": "integer"
+      },
+      "title": "T",
+      "type": "array"
+     },
+     "tf": {
+      "title": "Tf",
+      "type": "string"
+     }
+    },
+    "required": [
+     "id",
+     "symbol",
+     "tf",
+     "params",
+     "t",
+     "outputs",
+     "next_to"
+    ],
+    "title": "IndicatorOut",
+    "type": "object"
+   },
+   "InputIn": {
+    "properties": {
+     "default": {
+      "title": "Default",
+      "type": "number"
+     },
+     "max": {
+      "default": 1000,
+      "title": "Max",
+      "type": "number"
+     },
+     "min": {
+      "default": 1,
+      "title": "Min",
+      "type": "number"
+     },
+     "name": {
+      "maxLength": 32,
+      "minLength": 1,
+      "title": "Name",
+      "type": "string"
+     }
+    },
+    "required": [
+     "name",
+     "default"
+    ],
+    "title": "InputIn",
+    "type": "object"
+   },
+   "Item": {
+    "properties": {
+     "color": {
+      "default": "#2962ff",
+      "pattern": "^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$",
+      "title": "Color",
+      "type": "string"
+     },
+     "hidden": {
+      "default": false,
+      "title": "Hidden",
+      "type": "boolean"
+     },
+     "id": {
+      "maxLength": 40,
+      "minLength": 1,
+      "title": "Id",
+      "type": "string"
+     },
+     "kind": {
+      "enum": [
+       "trend",
+       "ray",
+       "extended",
+       "arrow",
+       "hline",
+       "hray",
+       "vline",
+       "rect",
+       "channel",
+       "fib",
+       "brush",
+       "text"
+      ],
+      "title": "Kind",
+      "type": "string"
+     },
+     "locked": {
+      "default": false,
+      "title": "Locked",
+      "type": "boolean"
+     },
+     "pts": {
+      "items": {
+       "$ref": "#/components/schemas/Point"
+      },
+      "maxItems": 2000,
+      "minItems": 1,
+      "title": "Pts",
+      "type": "array"
+     },
+     "text": {
+      "anyOf": [
+       {
+        "maxLength": 500,
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Text"
+     },
+     "width": {
+      "default": 2,
+      "maximum": 6.0,
+      "minimum": 1.0,
+      "title": "Width",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "id",
+     "kind",
+     "pts"
+    ],
+    "title": "Item",
+    "type": "object"
+   },
+   "ItemIn": {
+    "properties": {
+     "symbol": {
+      "title": "Symbol",
+      "type": "string"
+     }
+    },
+    "required": [
+     "symbol"
+    ],
+    "title": "ItemIn",
+    "type": "object"
+   },
+   "KeyLevel": {
+    "properties": {
+     "kind": {
+      "enum": [
+       "support",
+       "resistance"
+      ],
+      "title": "Kind",
+      "type": "string"
+     },
+     "note": {
+      "title": "Note",
+      "type": "string"
+     },
+     "price": {
+      "title": "Price",
+      "type": "number"
+     },
+     "source": {
+      "enum": [
+       "swing",
+       "ema",
+       "bollinger",
+       "vwap",
+       "supertrend",
+       "window_high_low"
+      ],
+      "title": "Source",
+      "type": "string"
+     }
+    },
+    "required": [
+     "kind",
+     "price",
+     "source",
+     "note"
+    ],
+    "title": "KeyLevel",
+    "type": "object"
+   },
+   "ParamOut": {
+    "properties": {
+     "default": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "string"
+       }
+      ],
+      "title": "Default"
+     },
+     "kind": {
+      "title": "Kind",
+      "type": "string"
+     },
+     "max": {
+      "title": "Max",
+      "type": "number"
+     },
+     "min": {
+      "title": "Min",
+      "type": "number"
+     },
+     "name": {
+      "title": "Name",
+      "type": "string"
+     },
+     "options": {
+      "items": {
+       "type": "string"
+      },
+      "title": "Options",
+      "type": "array"
+     }
+    },
+    "required": [
+     "name",
+     "default",
+     "min",
+     "max",
+     "kind",
+     "options"
+    ],
+    "title": "ParamOut",
+    "type": "object"
+   },
+   "PlotIn": {
+    "properties": {
+     "color": {
+      "anyOf": [
+       {
+        "pattern": "^#[0-9a-fA-F]{6}$",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Color"
+     },
+     "expr": {
+      "maxLength": 500,
+      "minLength": 1,
+      "title": "Expr",
+      "type": "string"
+     },
+     "name": {
+      "maxLength": 32,
+      "minLength": 1,
+      "title": "Name",
+      "type": "string"
+     },
+     "style": {
+      "default": "line",
+      "title": "Style",
+      "type": "string"
+     }
+    },
+    "required": [
+     "name",
+     "expr"
+    ],
+    "title": "PlotIn",
+    "type": "object"
+   },
+   "PlotOut": {
+    "properties": {
+     "color": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Color"
+     },
+     "name": {
+      "title": "Name",
+      "type": "string"
+     },
+     "style": {
+      "title": "Style",
+      "type": "string"
+     }
+    },
+    "required": [
+     "name",
+     "style",
+     "color"
+    ],
+    "title": "PlotOut",
+    "type": "object"
+   },
+   "Point": {
+    "properties": {
+     "p": {
+      "title": "P",
+      "type": "number"
+     },
+     "t": {
+      "title": "T",
+      "type": "number"
+     }
+    },
+    "required": [
+     "t",
+     "p"
+    ],
+    "title": "Point",
+    "type": "object"
+   },
+   "SymbolOut": {
+    "properties": {
+     "exchange": {
+      "title": "Exchange",
+      "type": "string"
+     },
+     "lot_size": {
+      "title": "Lot Size",
+      "type": "integer"
+     },
+     "name": {
+      "title": "Name",
+      "type": "string"
+     },
+     "symbol": {
+      "title": "Symbol",
+      "type": "string"
+     },
+     "tick_size": {
+      "title": "Tick Size",
+      "type": "number"
+     },
+     "ticker": {
+      "title": "Ticker",
+      "type": "string"
+     },
+     "type": {
+      "title": "Type",
+      "type": "string"
+     }
+    },
+    "required": [
+     "symbol",
+     "exchange",
+     "ticker",
+     "name",
+     "type",
+     "tick_size",
+     "lot_size"
+    ],
+    "title": "SymbolOut",
+    "type": "object"
+   },
+   "Usage": {
+    "properties": {
+     "input_tokens": {
+      "title": "Input Tokens",
+      "type": "integer"
+     },
+     "latency_ms": {
+      "title": "Latency Ms",
+      "type": "integer"
+     },
+     "model": {
+      "title": "Model",
+      "type": "string"
+     },
+     "output_tokens": {
+      "title": "Output Tokens",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "model",
+     "input_tokens",
+     "output_tokens",
+     "latency_ms"
+    ],
+    "title": "Usage",
+    "type": "object"
+   },
+   "ValidationError": {
+    "properties": {
+     "ctx": {
+      "title": "Context",
+      "type": "object"
+     },
+     "input": {
+      "title": "Input"
+     },
+     "loc": {
+      "items": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "integer"
+        }
+       ]
+      },
+      "title": "Location",
+      "type": "array"
+     },
+     "msg": {
+      "title": "Message",
+      "type": "string"
+     },
+     "type": {
+      "title": "Error Type",
+      "type": "string"
+     }
+    },
+    "required": [
+     "loc",
+     "msg",
+     "type"
+    ],
+    "title": "ValidationError",
+    "type": "object"
+   },
+   "WatchlistIn": {
+    "properties": {
+     "name": {
+      "maxLength": 128,
+      "minLength": 1,
+      "title": "Name",
+      "type": "string"
+     }
+    },
+    "required": [
+     "name"
+    ],
+    "title": "WatchlistIn",
+    "type": "object"
+   },
+   "WatchlistOut": {
+    "properties": {
+     "id": {
+      "title": "Id",
+      "type": "integer"
+     },
+     "name": {
+      "title": "Name",
+      "type": "string"
+     },
+     "symbols": {
+      "items": {
+       "type": "string"
+      },
+      "title": "Symbols",
+      "type": "array"
+     }
+    },
+    "required": [
+     "id",
+     "name",
+     "symbols"
+    ],
+    "title": "WatchlistOut",
+    "type": "object"
+   },
+   "app__api__scanner__RunIn": {
+    "properties": {
+     "date": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Date"
+     },
+     "market": {
+      "default": "NSE",
+      "title": "Market",
+      "type": "string"
+     },
+     "scanner": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Scanner"
+     }
+    },
+    "title": "RunIn",
+    "type": "object"
+   },
+   "app__api__screener__RunIn": {
+    "properties": {
+     "date": {
+      "anyOf": [
+       {
+        "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Date"
+     },
+     "exchange": {
+      "default": "NSE",
+      "title": "Exchange",
+      "type": "string"
+     },
+     "tf": {
+      "default": "1D",
+      "title": "Tf",
+      "type": "string"
+     }
+    },
+    "title": "RunIn",
+    "type": "object"
+   }
+  }
+ },
+ "info": {
+  "title": "Charting Platform API",
+  "version": "0.1.0"
+ },
+ "openapi": "3.1.0",
+ "paths": {
+  "/ai/explain": {
+   "post": {
+    "operationId": "explain_chart_ai_explain_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ExplainIn"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ExplainOut"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Explain Chart",
+    "tags": [
+     "ai"
+    ]
+   }
+  },
+  "/alerts": {
+   "get": {
+    "operationId": "list_alerts_alerts_get",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "status",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Status"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "items": {
+          "$ref": "#/components/schemas/AlertOut"
+         },
+         "title": "Response List Alerts Alerts Get",
+         "type": "array"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "List Alerts",
+    "tags": [
+     "alerts"
+    ]
+   },
+   "post": {
+    "operationId": "create_alert_alerts_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/AlertIn"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "201": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AlertOut"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Create Alert",
+    "tags": [
+     "alerts"
+    ]
+   }
+  },
+  "/alerts/events": {
+   "get": {
+    "operationId": "list_events_alerts_events_get",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "limit",
+      "required": false,
+      "schema": {
+       "default": 50,
+       "maximum": 500,
+       "minimum": 1,
+       "title": "Limit",
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "items": {
+          "$ref": "#/components/schemas/EventOut"
+         },
+         "title": "Response List Events Alerts Events Get",
+         "type": "array"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "List Events",
+    "tags": [
+     "alerts"
+    ]
+   }
+  },
+  "/alerts/{alert_id}": {
+   "delete": {
+    "operationId": "delete_alert_alerts__alert_id__delete",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "alert_id",
+      "required": true,
+      "schema": {
+       "title": "Alert Id",
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Delete Alert",
+    "tags": [
+     "alerts"
+    ]
+   },
+   "patch": {
+    "operationId": "update_alert_alerts__alert_id__patch",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "alert_id",
+      "required": true,
+      "schema": {
+       "title": "Alert Id",
+       "type": "integer"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/AlertPatch"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AlertOut"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Update Alert",
+    "tags": [
+     "alerts"
+    ]
+   }
+  },
+  "/custom-indicators": {
+   "get": {
+    "operationId": "list_custom_custom_indicators_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "items": {
+          "$ref": "#/components/schemas/CustomOut"
+         },
+         "title": "Response List Custom Custom Indicators Get",
+         "type": "array"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "List Custom",
+    "tags": [
+     "indicators"
+    ]
+   },
+   "post": {
+    "operationId": "create_custom_indicators_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/CustomIn"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "201": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/CustomOut"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Create",
+    "tags": [
+     "indicators"
+    ]
+   }
+  },
+  "/custom-indicators/check": {
+   "post": {
+    "description": "Validate a definition without saving it.",
+    "operationId": "check_custom_indicators_check_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/CustomIn"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Check",
+    "tags": [
+     "indicators"
+    ]
+   }
+  },
+  "/custom-indicators/{ind_id}": {
+   "delete": {
+    "operationId": "delete_custom_indicators__ind_id__delete",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "ind_id",
+      "required": true,
+      "schema": {
+       "title": "Ind Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Delete",
+    "tags": [
+     "indicators"
+    ]
+   },
+   "put": {
+    "operationId": "update_custom_indicators__ind_id__put",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "ind_id",
+      "required": true,
+      "schema": {
+       "title": "Ind Id",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/CustomIn"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/CustomOut"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Update",
+    "tags": [
+     "indicators"
+    ]
+   }
+  },
+  "/drawings": {
+   "get": {
+    "operationId": "get_drawings_drawings_get",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "symbol",
+      "required": true,
+      "schema": {
+       "title": "Symbol",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/DrawingsOut"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Get Drawings",
+    "tags": [
+     "drawings"
+    ]
+   },
+   "put": {
+    "operationId": "put_drawings_drawings_put",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "symbol",
+      "required": true,
+      "schema": {
+       "title": "Symbol",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/DrawingsIn"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/DrawingsOut"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Put Drawings",
+    "tags": [
+     "drawings"
+    ]
+   }
+  },
+  "/exchanges": {
+   "get": {
+    "operationId": "list_exchanges_exchanges_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "items": {
+          "additionalProperties": true,
+          "type": "object"
+         },
+         "title": "Response List Exchanges Exchanges Get",
+         "type": "array"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "List Exchanges",
+    "tags": [
+     "symbols"
+    ]
+   }
+  },
+  "/health": {
+   "get": {
+    "operationId": "health_health_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Health Health Get",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Health"
+   }
+  },
+  "/history": {
+   "get": {
+    "operationId": "history_history_get",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "symbol",
+      "required": true,
+      "schema": {
+       "examples": [
+        "NSE:RELIANCE"
+       ],
+       "title": "Symbol",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "tf",
+      "required": false,
+      "schema": {
+       "default": "1D",
+       "examples": [
+        "5m"
+       ],
+       "title": "Tf",
+       "type": "string"
+      }
+     },
+     {
+      "description": "exclusive upper bound (epoch s); use previous next_to",
+      "in": "query",
+      "name": "to",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "integer"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "description": "exclusive upper bound (epoch s); use previous next_to",
+       "title": "To"
+      }
+     },
+     {
+      "description": "inclusive lower bound (epoch s)",
+      "in": "query",
+      "name": "from",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "integer"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "description": "inclusive lower bound (epoch s)",
+       "title": "From"
+      }
+     },
+     {
+      "in": "query",
+      "name": "limit",
+      "required": false,
+      "schema": {
+       "default": 500,
+       "maximum": 5000,
+       "minimum": 1,
+       "title": "Limit",
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HistoryOut"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "History",
+    "tags": [
+     "history"
+    ]
+   }
+  },
+  "/indicators": {
+   "get": {
+    "description": "Built-in indicators, then the user's custom (formula) indicators.",
+    "operationId": "list_indicators_indicators_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "items": {
+          "$ref": "#/components/schemas/IndicatorMeta"
+         },
+         "title": "Response List Indicators Indicators Get",
+         "type": "array"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "List Indicators",
+    "tags": [
+     "indicators"
+    ]
+   }
+  },
+  "/indicators/{ind_id}": {
+   "get": {
+    "description": "Indicator values aligned to /history bars. Params as query args, e.g. ?length=50.",
+    "operationId": "indicator_values_indicators__ind_id__get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "ind_id",
+      "required": true,
+      "schema": {
+       "title": "Ind Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "symbol",
+      "required": true,
+      "schema": {
+       "title": "Symbol",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "tf",
+      "required": false,
+      "schema": {
+       "default": "1D",
+       "title": "Tf",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "to",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "integer"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "To"
+      }
+     },
+     {
+      "in": "query",
+      "name": "from",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "integer"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "From"
+      }
+     },
+     {
+      "in": "query",
+      "name": "limit",
+      "required": false,
+      "schema": {
+       "default": 500,
+       "maximum": 5000,
+       "minimum": 1,
+       "title": "Limit",
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/IndicatorOut"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Indicator Values",
+    "tags": [
+     "indicators"
+    ]
+   }
+  },
+  "/markets": {
+   "get": {
+    "description": "Every market Charting Lab knows (app/markets.toml): time zone, session, currency, ... in display order; the\nfirst is the default.",
+    "operationId": "list_markets_markets_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "items": {
+          "additionalProperties": true,
+          "type": "object"
+         },
+         "title": "Response List Markets Markets Get",
+         "type": "array"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "List Markets",
+    "tags": [
+     "symbols"
+    ]
+   }
+  },
+  "/patterns": {
+   "get": {
+    "operationId": "list_patterns_patterns_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "items": {
+          "additionalProperties": true,
+          "type": "object"
+         },
+         "title": "Response List Patterns Patterns Get",
+         "type": "array"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "List Patterns",
+    "tags": [
+     "patterns"
+    ]
+   }
+  },
+  "/patterns/counts": {
+   "get": {
+    "description": "How often every pattern occurs in the chart's last `limit` bars (for the pattern menu), whether shown or\nnot; counts signal days, so several hits inside one weekly/monthly bar each count. sr = number of levels.",
+    "operationId": "count_patterns_patterns_counts_get",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "symbol",
+      "required": true,
+      "schema": {
+       "title": "Symbol",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "tf",
+      "required": false,
+      "schema": {
+       "default": "1D",
+       "title": "Tf",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "limit",
+      "required": false,
+      "schema": {
+       "default": 500,
+       "maximum": 5000,
+       "minimum": 1,
+       "title": "Limit",
+       "type": "integer"
+      }
+     },
+     {
+      "in": "query",
+      "name": "basis",
+      "required": false,
+      "schema": {
+       "default": "daily",
+       "enum": [
+        "daily",
+        "chart"
+       ],
+       "title": "Basis",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Count Patterns Patterns Counts Get",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Count Patterns",
+    "tags": [
+     "patterns"
+    ]
+   }
+  },
+  "/patterns/scan": {
+   "get": {
+    "description": "Patterns present in the chart's last `limit` bars (the bars /history returns): markers, shapes, levels.",
+    "operationId": "scan_patterns_patterns_scan_get",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "symbol",
+      "required": true,
+      "schema": {
+       "title": "Symbol",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "tf",
+      "required": false,
+      "schema": {
+       "default": "1D",
+       "title": "Tf",
+       "type": "string"
+      }
+     },
+     {
+      "description": "comma list of pattern ids; empty = none",
+      "in": "query",
+      "name": "ids",
+      "required": false,
+      "schema": {
+       "default": "",
+       "description": "comma list of pattern ids; empty = none",
+       "title": "Ids",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "limit",
+      "required": false,
+      "schema": {
+       "default": 500,
+       "maximum": 5000,
+       "minimum": 1,
+       "title": "Limit",
+       "type": "integer"
+      }
+     },
+     {
+      "description": "daily: rulebook rules on daily bars, placed on this timeframe; chart: rules on this timeframe's bars",
+      "in": "query",
+      "name": "basis",
+      "required": false,
+      "schema": {
+       "default": "daily",
+       "description": "daily: rulebook rules on daily bars, placed on this timeframe; chart: rules on this timeframe's bars",
+       "enum": [
+        "daily",
+        "chart"
+       ],
+       "title": "Basis",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Scan Patterns Patterns Scan Get",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Scan Patterns",
+    "tags": [
+     "patterns"
+    ]
+   }
+  },
+  "/quotes": {
+   "get": {
+    "description": "Latest quotes; starts streaming any symbol not already live (kept alive via pin).",
+    "operationId": "quotes_quotes_get",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "symbols",
+      "required": true,
+      "schema": {
+       "examples": [
+        "NSE:RELIANCE,NSE:TCS"
+       ],
+       "title": "Symbols",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "items": {
+          "additionalProperties": true,
+          "type": "object"
+         },
+         "title": "Response Quotes Quotes Get",
+         "type": "array"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Quotes",
+    "tags": [
+     "live"
+    ]
+   }
+  },
+  "/scanner": {
+   "get": {
+    "description": "One scanner: is it set up and running, its markets and their sessions, and its saved scans (newest first);\n`scanners` lists every scanner in use (name, title), the default first.",
+    "operationId": "status_scanner_get",
+    "parameters": [
+     {
+      "description": "the setup scanner's name (GET /scanner lists them); default: the first",
+      "in": "query",
+      "name": "scanner",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "description": "the setup scanner's name (GET /scanner lists them); default: the first",
+       "title": "Scanner"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Status Scanner Get",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Status",
+    "tags": [
+     "scanner"
+    ]
+   }
+  },
+  "/scanner/job": {
+   "get": {
+    "operationId": "job_scanner_job_get",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "since",
+      "required": false,
+      "schema": {
+       "default": 0,
+       "title": "Since",
+       "type": "integer"
+      }
+     },
+     {
+      "description": "the setup scanner's name (GET /scanner lists them); default: the first",
+      "in": "query",
+      "name": "scanner",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "description": "the setup scanner's name (GET /scanner lists them); default: the first",
+       "title": "Scanner"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Job Scanner Job Get",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Job",
+    "tags": [
+     "scanner"
+    ]
+   }
+  },
+  "/scanner/portfolio": {
+   "get": {
+    "description": "The scanner's watchlist and trades.",
+    "operationId": "portfolio_scanner_portfolio_get",
+    "parameters": [
+     {
+      "description": "the setup scanner's name (GET /scanner lists them); default: the first",
+      "in": "query",
+      "name": "scanner",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "description": "the setup scanner's name (GET /scanner lists them); default: the first",
+       "title": "Scanner"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Portfolio Scanner Portfolio Get",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Portfolio",
+    "tags": [
+     "scanner"
+    ]
+   }
+  },
+  "/scanner/report/{path}": {
+   "get": {
+    "description": "A report file. Chart pages open as Charting Lab's own chart and trade summary (raw=1: the scanner's page).",
+    "operationId": "report_file_scanner_report__path__get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "path",
+      "required": true,
+      "schema": {
+       "title": "Path",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "raw",
+      "required": false,
+      "schema": {
+       "default": false,
+       "title": "Raw",
+       "type": "boolean"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Report File",
+    "tags": [
+     "scanner"
+    ]
+   }
+  },
+  "/scanner/run": {
+   "post": {
+    "description": "Start a scan (a scan already saved is not run again: 409).",
+    "operationId": "run_scan_scanner_run_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/app__api__scanner__RunIn"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Run Scan Scanner Run Post",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Run Scan",
+    "tags": [
+     "scanner"
+    ]
+   }
+  },
+  "/scanner/scans/{scan_id}": {
+   "get": {
+    "operationId": "get_scan_scanner_scans__scan_id__get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "scan_id",
+      "required": true,
+      "schema": {
+       "title": "Scan Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "near",
+      "required": false,
+      "schema": {
+       "default": true,
+       "title": "Near",
+       "type": "boolean"
+      }
+     },
+     {
+      "description": "the setup scanner's name (GET /scanner lists them); default: the first",
+      "in": "query",
+      "name": "scanner",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "description": "the setup scanner's name (GET /scanner lists them); default: the first",
+       "title": "Scanner"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Get Scan Scanner Scans  Scan Id  Get",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Get Scan",
+    "tags": [
+     "scanner"
+    ]
+   }
+  },
+  "/scanner/scans/{scan_id}/explain": {
+   "get": {
+    "description": "A brief 'why this trade' for one signal (or near miss) of a saved scan.",
+    "operationId": "explain_signal_scanner_scans__scan_id__explain_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "scan_id",
+      "required": true,
+      "schema": {
+       "title": "Scan Id",
+       "type": "string"
+      }
+     },
+     {
+      "description": "ticker, e.g. MARICO (or NSE:MARICO)",
+      "in": "query",
+      "name": "symbol",
+      "required": true,
+      "schema": {
+       "description": "ticker, e.g. MARICO (or NSE:MARICO)",
+       "title": "Symbol",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "setup",
+      "required": true,
+      "schema": {
+       "title": "Setup",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "near",
+      "required": false,
+      "schema": {
+       "default": false,
+       "title": "Near",
+       "type": "boolean"
+      }
+     },
+     {
+      "description": "your portfolio size; default: the scan's capital",
+      "in": "query",
+      "name": "equity",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "exclusiveMinimum": 0,
+         "type": "number"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "description": "your portfolio size; default: the scan's capital",
+       "title": "Equity"
+      }
+     },
+     {
+      "description": "risk per trade, % of the portfolio; default: the scan's",
+      "in": "query",
+      "name": "risk_pct",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "exclusiveMinimum": 0,
+         "maximum": 100,
+         "type": "number"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "description": "risk per trade, % of the portfolio; default: the scan's",
+       "title": "Risk Pct"
+      }
+     },
+     {
+      "description": "the setup scanner's name (GET /scanner lists them); default: the first",
+      "in": "query",
+      "name": "scanner",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "description": "the setup scanner's name (GET /scanner lists them); default: the first",
+       "title": "Scanner"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Explain Signal Scanner Scans  Scan Id  Explain Get",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Explain Signal",
+    "tags": [
+     "scanner"
+    ]
+   }
+  },
+  "/scanner/setups": {
+   "get": {
+    "description": "Every setup the scanner knows, with its name and explanation.",
+    "operationId": "setups_scanner_setups_get",
+    "parameters": [
+     {
+      "description": "the setup scanner's name (GET /scanner lists them); default: the first",
+      "in": "query",
+      "name": "scanner",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "description": "the setup scanner's name (GET /scanner lists them); default: the first",
+       "title": "Scanner"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Setups Scanner Setups Get",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Setups",
+    "tags": [
+     "scanner"
+    ]
+   }
+  },
+  "/screener/patterns-today": {
+   "get": {
+    "description": "A saved screen for exchange/timeframe (rows = symbols with at least one pattern on that bar), with the\nsession dates that have saved screens.",
+    "operationId": "patterns_today_screener_patterns_today_get",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "exchange",
+      "required": false,
+      "schema": {
+       "default": "NSE",
+       "title": "Exchange",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "tf",
+      "required": false,
+      "schema": {
+       "default": "1D",
+       "title": "Tf",
+       "type": "string"
+      }
+     },
+     {
+      "description": "a session with a saved screen; default: the newest",
+      "in": "query",
+      "name": "date",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "description": "a session with a saved screen; default: the newest",
+       "title": "Date"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Patterns Today Screener Patterns Today Get",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Patterns Today",
+    "tags": [
+     "screener"
+    ]
+   }
+  },
+  "/screener/patterns-today/job": {
+   "get": {
+    "operationId": "job_screener_patterns_today_job_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Job Screener Patterns Today Job Get",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Job",
+    "tags": [
+     "screener"
+    ]
+   }
+  },
+  "/screener/patterns-today/run": {
+   "post": {
+    "operationId": "run_screener_patterns_today_run_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/app__api__screener__RunIn"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Run Screener Patterns Today Run Post",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Run",
+    "tags": [
+     "screener"
+    ]
+   }
+  },
+  "/symbols": {
+   "get": {
+    "description": "Exact ticker first, then ticker prefixes, then name matches; exchanges in the market registry's order.",
+    "operationId": "search_symbols_symbols_get",
+    "parameters": [
+     {
+      "description": "prefix of ticker or substring of name",
+      "in": "query",
+      "name": "q",
+      "required": false,
+      "schema": {
+       "default": "",
+       "description": "prefix of ticker or substring of name",
+       "title": "Q",
+       "type": "string"
+      }
+     },
+     {
+      "description": "an exchange code (GET /markets)",
+      "in": "query",
+      "name": "exchange",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "description": "an exchange code (GET /markets)",
+       "title": "Exchange"
+      }
+     },
+     {
+      "in": "query",
+      "name": "limit",
+      "required": false,
+      "schema": {
+       "default": 20,
+       "maximum": 100,
+       "minimum": 1,
+       "title": "Limit",
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "items": {
+          "$ref": "#/components/schemas/SymbolOut"
+         },
+         "title": "Response Search Symbols Symbols Get",
+         "type": "array"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Search Symbols",
+    "tags": [
+     "symbols"
+    ]
+   }
+  },
+  "/symbols/{symbol}": {
+   "get": {
+    "operationId": "get_symbol_symbols__symbol__get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "symbol",
+      "required": true,
+      "schema": {
+       "title": "Symbol",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/SymbolOut"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Get Symbol",
+    "tags": [
+     "symbols"
+    ]
+   }
+  },
+  "/timeframes": {
+   "get": {
+    "operationId": "list_timeframes_timeframes_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "items": {
+          "type": "string"
+         },
+         "title": "Response List Timeframes Timeframes Get",
+         "type": "array"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "List Timeframes",
+    "tags": [
+     "history"
+    ]
+   }
+  },
+  "/watchlists": {
+   "get": {
+    "operationId": "list_watchlists_watchlists_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "items": {
+          "$ref": "#/components/schemas/WatchlistOut"
+         },
+         "title": "Response List Watchlists Watchlists Get",
+         "type": "array"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "List Watchlists",
+    "tags": [
+     "watchlists"
+    ]
+   },
+   "post": {
+    "operationId": "create_watchlist_watchlists_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/WatchlistIn"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "201": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/WatchlistOut"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Create Watchlist",
+    "tags": [
+     "watchlists"
+    ]
+   }
+  },
+  "/watchlists/{wid}": {
+   "delete": {
+    "operationId": "delete_watchlist_watchlists__wid__delete",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "wid",
+      "required": true,
+      "schema": {
+       "title": "Wid",
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Delete Watchlist",
+    "tags": [
+     "watchlists"
+    ]
+   },
+   "patch": {
+    "operationId": "rename_watchlist_watchlists__wid__patch",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "wid",
+      "required": true,
+      "schema": {
+       "title": "Wid",
+       "type": "integer"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/WatchlistIn"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/WatchlistOut"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Rename Watchlist",
+    "tags": [
+     "watchlists"
+    ]
+   }
+  },
+  "/watchlists/{wid}/items": {
+   "post": {
+    "operationId": "add_item_watchlists__wid__items_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "wid",
+      "required": true,
+      "schema": {
+       "title": "Wid",
+       "type": "integer"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ItemIn"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "201": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/WatchlistOut"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Add Item",
+    "tags": [
+     "watchlists"
+    ]
+   }
+  },
+  "/watchlists/{wid}/items/{symbol}": {
+   "delete": {
+    "operationId": "remove_item_watchlists__wid__items__symbol__delete",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "wid",
+      "required": true,
+      "schema": {
+       "title": "Wid",
+       "type": "integer"
+      }
+     },
+     {
+      "in": "path",
+      "name": "symbol",
+      "required": true,
+      "schema": {
+       "title": "Symbol",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/WatchlistOut"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Remove Item",
+    "tags": [
+     "watchlists"
+    ]
+   }
+  }
+ }
+}

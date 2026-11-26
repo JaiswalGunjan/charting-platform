@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { api, ApiError, type PatternMeta, type PatternsToday as Screen, type TodayRow } from "./api";
 import { fmt } from "./format";
-import { liquidRows, matchRows, nextSort, patternCounts, sortRows, turnoverText, type Sort, type SortKey } from "./todayLogic";
+import { liquidRows, matchRows, nextSort, patternCounts, sortRows, turnoverLabel, turnoverText, type Sort, type SortKey } from "./todayLogic";
+import { markets } from "./markets";
 
 function usePersisted<T>(key: string, init: T): [T, (v: T) => void] {
   const [v, setV] = useState<T>(() => {
@@ -16,8 +17,8 @@ function usePersisted<T>(key: string, init: T): [T, (v: T) => void] {
   return [v, setV];
 }
 
-const US = new Set(["NASDAQ", "NYSE"]);
-const SCREEN_EXCHANGES = ["NSE", "NYSE", "NASDAQ"];
+// the exchanges listed: the market registry's (screen = true), in its order
+const screenExchanges = () => markets().filter((x) => x.screen).map((x) => x.code);
 const IST = 19800;
 const day = (t: number) =>
   new Date((t + IST) * 1000).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
@@ -42,7 +43,7 @@ export default function PatternsToday(props: {
   metas: PatternMeta[];
   onOpen: (row: TodayRow, tf: string, patterns: string[]) => void;
 }) {
-  const [exchanges, setExchanges] = useState<string[]>(SCREEN_EXCHANGES);
+  const [exchanges, setExchanges] = useState<string[]>(screenExchanges);
   const [exchange, setExchange] = usePersisted("today.exchange", "NSE");
   const [tf, setTf] = usePersisted<"1D" | "1W">("today.tf", "1D");
   const [selected, setSelected] = usePersisted<string[]>("today.patterns", []);
@@ -61,7 +62,7 @@ export default function PatternsToday(props: {
 
   useEffect(() => {
     api.exchanges().then((xs) => {
-      const have = SCREEN_EXCHANGES.filter((e) => xs.some((x) => x.exchange === e));
+      const have = screenExchanges().filter((e) => xs.some((x) => x.exchange === e));
       if (have.length) setExchanges(have);
     }, () => {});
   }, []);
@@ -117,7 +118,7 @@ export default function PatternsToday(props: {
   const tDays = screen?.turnover_days ?? 20;
   const qDays = screen?.htq_days ?? 63;
   const turnoverTip = `Average daily turnover of the last ${tDays} sessions: typical price (high + low + close) / 3 x volume, ` +
-    `in ${US.has(exchange) ? "$ millions" : "₹ crore"}. HTQ = that average is at its highest of the last ${qDays} sessions (money flowing in).`;
+    `in ${turnoverLabel(exchange)}. HTQ = that average is at its highest of the last ${qDays} sessions (money flowing in).`;
   const latest = screen?.latest_session ?? dates[0];
   // run only what is not saved yet: the picked date, or the newest session with data when it is newer than the screen
   const runDate = session || latest || "";
@@ -139,7 +140,7 @@ export default function PatternsToday(props: {
         <div className="step" role="group" aria-label="Exchange">
           <span className="step-n">2</span> Exchange
           <nav className="tabs inline seg">
-            {SCREEN_EXCHANGES.map((x) => (
+            {screenExchanges().map((x) => (
               <button key={x} className={exchange === x ? "active" : ""} onClick={() => setExchange(x)}
                 disabled={!exchanges.includes(x)} title={exchanges.includes(x) ? undefined : `No ${x} data imported`}>{x}</button>
             ))}
@@ -234,7 +235,7 @@ export default function PatternsToday(props: {
             <label className="mini" title={turnoverTip}>Min avg turnover ({tDays})
               <input type="number" min={0} step="any" value={minTurnover}
                 onChange={(e) => setMinTurnover(Math.max(0, Number(e.target.value) || 0))} />
-              {US.has(exchange) ? "$M" : "₹ Cr"}
+              {turnoverLabel(exchange)}
             </label>
             <label className="mini" title={`Only stocks whose ${tDays}-day average turnover is at its highest of the last ${qDays} sessions (money flowing in)`}>
               <input type="checkbox" checked={htqOnly} onChange={(e) => setHtqOnly(e.target.checked)} aria-label="HTQ only" />
@@ -285,7 +286,7 @@ export default function PatternsToday(props: {
               {!rows.length && (
                 <tr><td colSpan={6} className="muted">
                   No stock formed {sel.size > 1 ? "all the selected patterns together" : "the selected pattern"}
-                  {minTurnover ? ` with average turnover (${tDays}) above ${minTurnover} ${US.has(exchange) ? "$M" : "₹ Cr"}` : ""}.
+                  {minTurnover ? ` with average turnover (${tDays}) above ${minTurnover} ${turnoverLabel(exchange)}` : ""}.
                 </td></tr>
               )}
             </tbody>

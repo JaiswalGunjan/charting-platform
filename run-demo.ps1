@@ -17,6 +17,11 @@ if (-not (Test-Path (Join-Path $root "frontend\node_modules"))) {
     Push-Location (Join-Path $root "frontend"); npm install; Pop-Location
 }
 
+# minute bars in the local PostgreSQL + TimescaleDB (BAR_STORES=1m=timescale): that server must be up first
+$envFile = Join-Path $root ".env"
+if ((Test-Path $envFile) -and (Select-String -Path $envFile -Pattern '^\s*BAR_STORES\s*=.*timescale' -Quiet)) {
+    & powershell -ExecutionPolicy Bypass -File (Join-Path $root "scripts\pg_local.ps1") start
+}
 Start-Process powershell -ArgumentList "-NoExit", "-Command", "Set-Location '$root\backend'; & '$py' -m uvicorn app.main:app --port 8000"
 Start-Process powershell -ArgumentList "-NoExit", "-Command", "`$env:Path='$nodeDir;'+`$env:Path; Set-Location '$root\frontend'; npm run dev"
 Start-Sleep 4

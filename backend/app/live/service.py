@@ -10,7 +10,7 @@ from sqlalchemy.orm import sessionmaker
 
 from app.live.bars import FormingBars, LiveBar, live_bucket
 from app.live.store import LiveStore
-from app.live.ticks import Tick, TickSource
+from app.live.ticks import Tick, TickSource, feed_of
 from app.marketdata.base import Bar, parse_symbol
 from app.marketdata.history import get_bars
 from app.marketdata.loader import resolve_symbol, to_info, upsert_candles
@@ -211,7 +211,7 @@ class LiveService:
         if fb is None:
             return  # late tick after unsubscribe
         res = fb.apply(tick.ts, tick.price, tick.qty)
-        if res.closed_1m is not None and self.persist:
+        if res.closed_1m is not None and self._saves(tick.symbol):
             day = fb.bars.get("1D")
             self._spawn(asyncio.to_thread(self._persist, self.symbol_ids[tick.symbol],
                                           res.closed_1m, LiveBar(**day.as_dict()) if day else None))
@@ -230,6 +230,15 @@ class LiveService:
                     self._spawn(out)
             except Exception:  # a broken listener must never stop the feed
                 log.exception("tick listener failed")
+
+    def _saves(self, symbol: str) -> bool:
+        """Closed live bars are saved for a real feed; simulated ones only when persist is on (synthetic history)."""
+        feed = feed_of(self.source, symbol.split(":", 1)[0])
+        return feed == "live" or (feed == "simulated" and self.persist)
+
+    def feeds(self, exchanges) -> dict[str, str]:
+        """What each exchange's ticks are: live, simulated or none."""
+        return {ex: feed_of(self.source, ex) for ex in exchanges}
 
     def _spawn(self, aw) -> None:
         t = asyncio.ensure_future(aw)

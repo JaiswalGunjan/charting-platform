@@ -1,7 +1,7 @@
 """Setup Screener: why the market rule stops (or shrinks) new entries, sizes on a blocked day, and the score note."""
 import json
 
-from app.scanner_explain import explain, market_note, score_note
+from app.adapters.swingscanner.explain import explain, market_note, score_note
 from tests.test_m14_scanner import scan_root  # noqa: F401  (fixture)
 
 RULES = {"S7-R007": "Strong bear: 20 WMA below 50, both falling.", "S7-R014": "Small-cap index below its 10-day low.",

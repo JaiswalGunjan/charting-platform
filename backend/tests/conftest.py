@@ -1,5 +1,12 @@
-from datetime import date, datetime
-from types import SimpleNamespace
+import os
+
+# Before the app reads its settings: the owner's .env routes minute bars to the real PostgreSQL
+# (BAR_STORES=1m=timescale). Tests never write there; environment variables win over .env.
+os.environ["BAR_STORES"] = ""
+os.environ["MINUTE_DATABASE_URL"] = ""
+
+from datetime import date, datetime  # noqa: E402
+from types import SimpleNamespace  # noqa: E402
 
 import pytest
 from fastapi.testclient import TestClient
@@ -89,3 +96,35 @@ def client(session_factory, ticks, llm):
                      session_factory=session_factory, analyst=ChartAnalyst(client=llm))
     with TestClient(app) as c:
         yield c
+
+
+@pytest.fixture(autouse=True)
+def _no_real_screens(tmp_path_factory, monkeypatch):
+    """No test reads or writes the real saved screens (backend/data/screens): every test gets its own screens folder,
+    and the default folder points to a scratch one (a test that clears SCREENS_DIR still cannot reach the real one).
+    A screen job a test started is waited for before the folders are restored."""
+    from app.config import get_settings
+    from app.patterns import store
+
+    monkeypatch.setattr(get_settings(), "screens_dir", str(tmp_path_factory.mktemp("screens")))
+    monkeypatch.setattr(store, "SCREEN_DIR", tmp_path_factory.mktemp("default-screens"))
+    yield
+    # a screen started through the API runs in a thread: let it finish here, while the folders above still apply
+    from app.api import screener as api_sc
+
+    if api_sc._LOCK.acquire(timeout=120):
+        api_sc._LOCK.release()
+
+
+@pytest.fixture(autouse=True)
+def _no_real_minute_store(monkeypatch):
+    """The owner's .env routes minute bars to the real PostgreSQL (BAR_STORES=1m=timescale): tests never use it; a
+    test that wants a minute store sets its own (test_m24 uses a database of its own)."""
+    from app import providers
+    from app.config import get_settings
+
+    monkeypatch.setattr(get_settings(), "bar_stores", "")
+    monkeypatch.setattr(get_settings(), "minute_database_url", "")
+    providers.reset()
+    yield
+    providers.reset()

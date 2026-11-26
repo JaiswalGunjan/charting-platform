@@ -1,6 +1,6 @@
 """The scanner's report served in Charting Lab's theme: files read (never written) from the scans folder, theme and
 script added, the report's root paths pointed at this route, its /api calls passed to the scanner's server."""
-from app.api.scanner_report import restyle_html, restyle_js
+from app.adapters.swingscanner.report import restyle_html, restyle_js
 from tests.test_m14_scanner import scan_root  # noqa: F401  (fixture)
 
 REPORT = "/scanner/report/NSE_daily_2026-11-23"
@@ -91,6 +91,6 @@ def test_chart_pages_open_in_charting_lab(client, scan_root):  # noqa: F811
     write_report(root)
     r = client.get(f"{REPORT}/charts/MARICO_BBR_2026-11-23.html", follow_redirects=False)
     assert r.status_code == 302
-    assert r.headers["location"] == "/?scan=NSE_daily_2026-11-23&symbol=MARICO&setup=BBR"
+    assert r.headers["location"] == "/?scan=NSE_daily_2026-11-23&symbol=MARICO&setup=BBR&scanner=swingscanner"
     # a chart page that is not a signal of the scan is served as it is
     assert client.get(f"{REPORT}/charts/OTHER_PP_2026-11-23.html", follow_redirects=False).status_code == 404

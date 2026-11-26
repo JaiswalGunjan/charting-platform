@@ -16,10 +16,10 @@ def job(tmp_path, monkeypatch):
     spec = importlib.util.spec_from_file_location("daily_update", SCRIPT)
     m = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(m)
-    monkeypatch.setattr(m, "DAILY", tmp_path / "market_data_daily")
+    monkeypatch.setitem(m.CFG["paths"], "data", str(tmp_path / "market_data_daily"))
     monkeypatch.setattr(m, "NSE_HOLIDAYS", tmp_path / "nse_holidays.json")
     monkeypatch.setattr(m, "LOGS", tmp_path / "logs")
-    monkeypatch.setattr(m, "SCANNER", tmp_path / "SwingScanner")
+    monkeypatch.setitem(m.CFG["paths"], "scanner", str(tmp_path / "SwingScanner"))
     (tmp_path / "nse_holidays.json").write_text(json.dumps({"2026": ["2026-11-24", "2026-12-25"]}))
     return m
 
@@ -136,7 +136,7 @@ def _fake_run(job, calls, save=True):
         calls.append((name, cmd, env))
         if save and name.startswith("setup scan"):
             ex = name.split()[-1]
-            out = job.SCANNER / "scans" / f"{ex}_daily_{DAY:%Y-%m-%d}"
+            out = job.path("scanner") / "scans" / f"{ex}_daily_{DAY:%Y-%m-%d}"
             out.mkdir(parents=True, exist_ok=True)
             (out / "signals.csv").write_text("x")
         return True
@@ -152,7 +152,7 @@ def test_after_the_download_setup_scan_then_pattern_screen(job, monkeypatch):
                      "drop chart pages", "pattern screen"]
     assert steps == dict(import_eod=True, setup_scan=True, pattern_screen=True)
     scan_cmd = calls[1][1]
-    if job.SCAN_PY.is_file():                                               # US scans run from the scanner's source
+    if job.path("scan_py").is_file():                                               # US scans run from the scanner's source
         assert "swingbt.scan" in [str(x) for x in scan_cmd] and calls[1][2]["SWINGBT_CONFIG"].endswith("swingbt_config.ini")
     calls.clear()
     job.after_download(job.MARKETS[NSE], DAY, dry=False)                    # NSE scans with SwingScanner.exe,
@@ -172,8 +172,8 @@ def test_a_scan_that_saved_nothing_for_the_day_is_an_error(job, monkeypatch):
 
 
 def test_a_saved_scan_is_not_run_again(job, monkeypatch):
-    (job.SCANNER / "scans" / "NSE_daily_2026-11-26").mkdir(parents=True)
-    (job.SCANNER / "scans" / "NSE_daily_2026-11-26" / "signals.csv").write_text("x")
+    (job.path("scanner") / "scans" / "NSE_daily_2026-11-26").mkdir(parents=True)
+    (job.path("scanner") / "scans" / "NSE_daily_2026-11-26" / "signals.csv").write_text("x")
     names = []
     monkeypatch.setattr(job, "run", lambda cmd, cwd, name, timeout=0, env=None: names.append(name) or True)
     job.after_download(job.MARKETS[NSE], DAY, dry=False)
@@ -191,3 +191,64 @@ def test_main_skips_a_closed_day_and_records_the_status(job, monkeypatch):
     monkeypatch.setattr(job, "after_download", lambda *a, **k: pytest.fail("not after a failed download"))
     assert job.main(["--market", "NSE", "--date", "2026-11-26"]) == 1
     assert json.loads((job.LOGS / "daily_nse_status.json").read_text())["result"].startswith("data not available")
+
+
+# ---------------------------------------------------------------- the tools come from the config
+OTHER_TOOLS = '''
+[paths]
+vendor = "{tmp}/vendor"
+[markets.IN]
+exchanges = ["NSE", "BSE"]
+calendar = "NSE"
+scan = "mine"
+[download]
+cwd = "{vendor}"
+command = ["vendor-cli", "fetch", "--day", "{day}", "{exchanges...}"]
+done = "{vendor}/{exchange}-{yyyymmdd}.parquet"
+[import]
+name = "load {exchanges}"
+command = ["loader", "{exchanges}"]
+[scan.mine]
+name = "my scan {exchange}"
+command = ["my-scanner", "--on", "{exchange}:{day}"]
+done = "{vendor}/scans/{exchange}/{day}.json"
+[screen]
+name = "pattern screen"
+command = ["screen", "{exchanges}"]
+'''
+
+
+def test_other_tools_run_from_the_config_alone(job, tmp_path, monkeypatch):
+    """Another data vendor, loader and setup scanner, and a market with two exchanges: only the config changes."""
+    cfg_file = tmp_path / "other.toml"
+    cfg_file.write_text(OTHER_TOOLS.replace("{tmp}", tmp_path.as_posix()))
+    cfg = job.load_config(cfg_file)
+    monkeypatch.setattr(job, "CFG", cfg)
+    monkeypatch.setattr(job, "MARKETS", job.markets(cfg))
+    m = job.MARKETS["IN"]
+    calls = []
+
+    def fake_run(cmd, cwd, name, timeout=0, env=None):
+        calls.append((name, cmd))
+        if cmd[0] == "vendor-cli":                                          # the day is out at once
+            for ex in m.exchanges:
+                (tmp_path / "vendor").mkdir(exist_ok=True)
+                (tmp_path / "vendor" / f"{ex}-20261126.parquet").write_text("x")
+        if cmd[0] == "my-scanner":
+            ex = cmd[-1].split(":")[0]
+            (tmp_path / "vendor" / "scans" / ex).mkdir(parents=True, exist_ok=True)
+            (tmp_path / "vendor" / "scans" / ex / "2026-11-26.json").write_text("{}")
+        return True
+
+    monkeypatch.setattr(job, "run", fake_run)
+    assert job.download(m, DAY, dry=False, sleep=lambda s: None) is True
+    assert calls[0][1] == ["vendor-cli", "fetch", "--day", "2026-11-26", "NSE", "BSE"]
+    calls.clear()
+    assert job.after_download(m, DAY, dry=False) == dict(import_eod=True, setup_scan=True, pattern_screen=True)
+    assert [c[0] for c in calls] == ["load NSE,BSE", "my scan NSE", "my scan BSE", "pattern screen"]   # no slim step
+    assert calls[1][1] == ["my-scanner", "--on", "NSE:2026-11-26"]
+    calls.clear()
+    job.after_download(m, DAY, dry=False)                                    # saved scans are not run again
+    assert [c[0] for c in calls] == ["load NSE,BSE", "pattern screen"]
+    with pytest.raises(KeyError, match="nowhere"):
+        job.fill("{nowhere}/x", {})                                         # a typo in the config is named

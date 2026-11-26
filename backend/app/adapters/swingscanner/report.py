@@ -16,12 +16,12 @@ from urllib.parse import urlencode
 
 from fastapi.responses import RedirectResponse, Response
 
-from app.api.scanner import SCAN_ID, _rows, scanner_dir, scans_dir
+from .core import SCAN_ID, _rows, scanner_dir, scans_dir
 from app.config import get_settings
 from app.wording import neutral_html
 
 router = APIRouter(prefix="/scanner/report", tags=["scanner"])
-ASSETS = Path(__file__).resolve().parent.parent / "static"
+ASSETS = Path(__file__).resolve().parent / "static"
 
 
 def restyle_html(html: str) -> str:
@@ -62,7 +62,7 @@ def _scanner_get(path: str) -> tuple[bytes, str]:
         raise HTTPException(404, f"not in the scans folder and the scanner is offline: {e}") from e
 
 
-@router.api_route("/api/{path:path}", methods=["GET", "POST"])
+@router.api_route("/api/{path:path}", methods=["GET", "POST"], include_in_schema=False)   # the scanner's own API
 async def scanner_api(path: str, request: Request) -> Response:
     """Pass the report's own actions (watch, trade, refresh, portfolio) to the scanner's server."""
     url = get_settings().scanner_url.rstrip("/") + "/api/" + path
@@ -103,6 +103,7 @@ def report_file(path: str, raw: bool = False) -> Response:
     scans = scans_dir(root).resolve()
     if not raw and (sig := chart_signal(scans, path)):
         q = dict(scan=sig["scan"], symbol=sig["symbol"], setup=sig["setup"]) | ({"near": "1"} if sig["near"] else {})
+        q["scanner"] = "swingscanner"                     # several setup scanners may be in use
         return RedirectResponse("/?" + urlencode(q), status_code=302)
     rel = path or "index.html"
     f = (scans / rel).resolve()

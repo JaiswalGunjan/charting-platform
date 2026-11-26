@@ -322,3 +322,17 @@ test("Setup Screener opens in the same tab, next to the Pattern Screener; a sign
   await setups.waitForTimeout(600);
   expect(setups.context().pages().length).toBe(before);
 });
+
+test("several setup scanners: a picker switches between them, each with its own scans", async ({ page }) => {
+  const { panel } = await openSetups(page);
+  const pick = panel.getByRole("group", { name: "Setup scanner" });
+  await expect(pick.getByRole("button")).toHaveText(["SwingScanner", "No setup scanner"]);
+  await expect(pick.getByRole("button", { name: "SwingScanner" })).toHaveClass(/active/);   // the default
+  await expect(panel.locator(".scan-table").first()).toBeVisible();
+  await pick.getByRole("button", { name: "No setup scanner" }).click();
+  await expect(panel).toContainText("No setup scanner is set up");
+  await expect(panel.locator(".scan-table")).toHaveCount(0);
+  await pick.getByRole("button", { name: "SwingScanner" }).click();                         // and back
+  await expect(panel.locator(".scan-table").first()).toBeVisible();
+  await expect(panel.locator(".scan-table tbody tr").first()).toContainText("WIPRO");                    // its scans again
+});

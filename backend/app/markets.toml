@@ -1,0 +1,52 @@
+# The markets Charting Lab knows: adding a market is a new entry here (plus its data, and a holiday calendar for the
+# daily job). Code and UI read these facts from here (backend: app/markets.py; UI: GET /markets), never from a list
+# of exchange names of their own.
+#
+# timezone   the exchange's IANA time zone; intraday bars are anchored at `open` there (DST-aware)
+# open/close regular session, local time ("00:00"/"24:00" for a market that never closes, e.g. crypto)
+# currency   ISO code: prices, position sizes and turnover are shown in it
+# tz_label   how the chart names the time zone of intraday bars
+# screen     listed in the Pattern Screener's exchange picker
+# Daily bars are stamped at IST midnight of their trading date for every market (a storage convention: the stamp
+# encodes the date); only intraday bars use the market's own time zone.
+# The first market is the default (a bare ticker such as RELIANCE means NSE:RELIANCE).
+
+[NSE]
+title = "National Stock Exchange of India"
+country = "IN"
+timezone = "Asia/Kolkata"
+tz_label = "IST"
+open = "09:15"
+close = "15:30"
+currency = "INR"
+screen = true
+
+[BSE]
+title = "BSE (Bombay Stock Exchange)"
+country = "IN"
+timezone = "Asia/Kolkata"
+tz_label = "IST"
+open = "09:15"
+close = "15:30"
+currency = "INR"
+screen = false
+
+[NYSE]
+title = "New York Stock Exchange"
+country = "US"
+timezone = "America/New_York"
+tz_label = "New York"
+open = "09:30"
+close = "16:00"
+currency = "USD"
+screen = true
+
+[NASDAQ]
+title = "Nasdaq"
+country = "US"
+timezone = "America/New_York"
+tz_label = "New York"
+open = "09:30"
+close = "16:00"
+currency = "USD"
+screen = true

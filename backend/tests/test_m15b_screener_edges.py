@@ -7,6 +7,7 @@ import pytest
 from sqlalchemy.orm import sessionmaker
 
 from app.api import screener as api_sc
+from app.config import get_settings
 from app.db import init_db, make_engine
 from app.marketdata.base import Bar, SymbolInfo
 from app.marketdata.loader import resolve_symbol, upsert_candles, upsert_symbols
@@ -36,7 +37,7 @@ def db(tmp_path, monkeypatch):
         upsert_candles(s, resolve_symbol(s, "NSE:STALE").id, "1D", bars(300, LAST - 3 * DAY, seed=2))  # stopped trading
         upsert_candles(s, resolve_symbol(s, "NSE:SHORT").id, "1D", bars(20, LAST, seed=3))             # new listing
         upsert_candles(s, resolve_symbol(s, "NSE:BROKEN").id, "1D", bars(300, LAST, seed=4))
-    monkeypatch.setattr(sc, "SCREEN_DIR", tmp_path / "screens")
+    monkeypatch.setattr(get_settings(), "screens_dir", str(tmp_path / "screens"))
     return f
 
 
@@ -106,7 +107,7 @@ def wait_job(client):
 
 
 def test_job_error_is_reported(client, monkeypatch, tmp_path):
-    monkeypatch.setattr(sc, "SCREEN_DIR", tmp_path / "screens")
+    monkeypatch.setattr(get_settings(), "screens_dir", str(tmp_path / "screens"))
 
     def fail(*a, **kw):
         raise RuntimeError("database is locked")
@@ -119,7 +120,7 @@ def test_job_error_is_reported(client, monkeypatch, tmp_path):
 
 
 def test_only_one_screen_at_a_time(client, monkeypatch, tmp_path):
-    monkeypatch.setattr(sc, "SCREEN_DIR", tmp_path)                 # nothing saved yet
+    monkeypatch.setattr(get_settings(), "screens_dir", str(tmp_path))   # nothing saved yet
     assert api_sc._LOCK.acquire(blocking=False)
     try:
         r = client.post("/screener/patterns-today/run", json=dict(exchange="NSE", tf="1W"))

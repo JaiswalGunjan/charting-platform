@@ -49,7 +49,10 @@ os.environ.update(
     SIMULATE_TICKS="true",              # the end-to-end tests drive live quotes and alerts with simulated ticks
     ANTHROPIC_API_KEY="",
     SCANNER_DIR=str(scanner),
+    SETUP_SCANNERS="swingscanner,none",  # two setup scanners side by side: the Setup Screener shows a picker
     SCREENS_DIR=str(tmp / "screens"),   # never overwrite the owner's saved "patterns today" screens
+    BAR_STORES="",                      # minute bars in the test database, never the owner's PostgreSQL
+    MINUTE_DATABASE_URL="",
     SCANNER_URL="http://127.0.0.1:9",   # nothing listens there: the scanner reads as offline
 )
 sys.path.insert(0, str(backend))

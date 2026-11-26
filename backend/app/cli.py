@@ -12,6 +12,7 @@
     python -m app.cli import-eod --only hourly                                # just the 1h bars (EOD_HOURLY_DIR)
 """
 import argparse
+import time
 import logging
 import sys
 from datetime import date, timedelta
@@ -110,15 +111,35 @@ def cmd_import_eod(args: argparse.Namespace) -> None:
 
 
 def cmd_scanner_slim(args: argparse.Namespace) -> None:
-    """Remove the charts/ folder of every saved scan (Charting Lab draws its own charts)."""
-    from app.api.scanner import scanner_dir, slim_scans
+    """Drop what saved scans do not need (SwingScanner: each scan's chart pages; Charting Lab draws its own charts)."""
+    from app.providers import setup_scanners
 
-    root = scanner_dir()
-    if root is None:
-        print("SCANNER_DIR is not set")
-        return
-    n, freed = slim_scans(root)
-    print(f"removed the chart pages of {n} scans, {freed / 1e6:,.0f} MB freed")
+    for sc in setup_scanners().values():
+        if not sc.status().get("configured"):
+            print(f"{sc.title}: not set up")
+            continue
+        n, freed = sc.slim()
+        print(f"{sc.title}: slimmed {n} scans, {freed / 1e6:,.0f} MB freed")
+
+
+def cmd_minute_store(args: argparse.Namespace) -> None:
+    """The minute-bar store (BAR_STORES=1m=timescale): set it up, show its size, apply its policies now."""
+    from app.marketdata.minute_store import TimescaleMinuteStore
+
+    st = TimescaleMinuteStore()
+    st.ensure_schema()
+    if args.compress:
+        print(f"compressed {st.compress_now()} chunks")
+    if args.prune:
+        print(f"dropped {st.apply_retention()} chunks older than {st.retention_days} days")
+    s = st.stats()
+    span = ""
+    if s["first"]:
+        day = lambda t: time.strftime("%Y-%m-%d", time.gmtime(t + 19800))  # noqa: E731
+        span = f", {day(s['first'])}..{day(s['last'])}"
+    print(f"minute bars: {s['bars']:,}{span}; {s['bytes'] / 1e6:,.0f} MB in {s['chunks']} weekly chunks "
+          f"({s['compressed_chunks']} compressed); kept {s['retention_days']} days, compressed after "
+          f"{s['compress_after_days']} (TimescaleDB policies)")
 
 
 def cmd_screen(args: argparse.Namespace) -> None:
@@ -190,7 +211,7 @@ def main(argv: list[str] | None = None) -> None:
     ie.add_argument("--exchanges", default="", help="e.g. NSE or NSE,BSE,NASDAQ,NYSE (default: EOD_EXCHANGES)")
     ie.add_argument("--refresh-names", action="store_true", help="re-download the public listing files")
     ie.set_defaults(fn=cmd_import_eod)
-    sl = sub.add_parser("scanner-slim", help="remove the chart pages from saved SwingScanner scans (keeps their data)")
+    sl = sub.add_parser("scanner-slim", help="slim the saved setup scans (SwingScanner: remove their chart pages, keep their data)")
     sl.set_defaults(fn=cmd_scanner_slim)
     sc = sub.add_parser("screen", help="patterns formed on the latest bar, for the dashboard")
     sc.add_argument("--exchanges", default="", help="default: EOD_EXCHANGES")
@@ -204,6 +225,10 @@ def main(argv: list[str] | None = None) -> None:
     un.add_argument("--refresh-names", action="store_true", help="re-download the listing files")
     un.set_defaults(fn=cmd_update_names)
     sub.add_parser("kite-login").set_defaults(fn=cmd_kite_login)
+    ms = sub.add_parser("minute-store", help="minute bars in TimescaleDB: set up, size, policies (BAR_STORES=1m=timescale)")
+    ms.add_argument("--compress", action="store_true", help="compress the chunks past the window now")
+    ms.add_argument("--prune", action="store_true", help="drop the chunks older than MINUTE_RETENTION_DAYS now")
+    ms.set_defaults(fn=cmd_minute_store)
     args = p.parse_args(argv)
     args.fn(args)
 

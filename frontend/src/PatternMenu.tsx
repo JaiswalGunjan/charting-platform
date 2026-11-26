@@ -51,7 +51,7 @@ export default function PatternMenu(props: {
               {g}
             </label>
             {ms.map((m) => (
-              <label key={m.id} className="pattern-item" title={`${m.about}\n\nRule: swingbt/rules/${m.rule.split(".")[0]}.py (${m.rule.split(".")[1] ?? ""})`}>
+              <label key={m.id} className="pattern-item" title={m.rule ? `${m.about}\n\nRule: ${m.rule}` : m.about}>
                 <input type="checkbox" checked={on.has(m.id)} onChange={() => toggle(m.id)} />
                 <span className="pattern-tag" style={{ background: m.color }}>{m.short || "S/R"}</span>
                 <span className="grow">{m.title}</span>
@@ -64,7 +64,7 @@ export default function PatternMenu(props: {
           </div>
         );
       })}
-      <div className="hint">Rules from your rulebook (TranscriptExtract/swingbt/rules), run on this chart's bars.
+      <div className="hint">Patterns from the pattern engines in use (today: your rulebook's rules), run on this chart's bars.
         Numbers = occurrences in the bars loaded on this chart, for every pattern (ticked or not). Markers sit on
         the signal bar; hover a bar for details. Designed for daily bars.</div>
     </div>

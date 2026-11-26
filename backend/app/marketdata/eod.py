@@ -18,7 +18,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-from sqlalchemy import delete, insert, select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from app.marketdata.base import SymbolInfo
@@ -27,7 +27,8 @@ from app.marketdata.names import NameInfo
 from app.marketdata.names import load as _load_names
 from app.marketdata.names import lookup as name_lookup
 from app.marketdata.timeframes import market_for
-from app.models import Candle, Symbol
+from app.models import Symbol
+from app.providers import bar_store
 
 
 def load_names(exchange: str, cache: Path | None, daily_root: Path | None) -> dict[str, NameInfo]:
@@ -133,23 +134,10 @@ def import_exchange(session: Session, root: Path, exchange: str,
 
 def _replace_candles(session: Session, exchange: str, drop_tfs: tuple[str, ...], tf: str,
                      df: pd.DataFrame, ids: dict[str, int]) -> None:
-    """Delete the exchange's bars of `drop_tfs`, then bulk-insert df (ticker, ts, o..v) as `tf`."""
-    session.execute(delete(Candle).where(
-        Candle.symbol_id.in_(select(Symbol.id).where(Symbol.exchange == exchange)),
-        Candle.tf.in_(drop_tfs)))
+    """Delete the exchange's bars of `drop_tfs`, then bulk-insert df (ticker, ts, o..v) as `tf` (the bar store)."""
     sid = df["ticker"].map(ids).to_numpy(dtype=np.int64)
-    cols = {k: df[k].to_numpy() for k in ("ts", "o", "h", "l", "c", "v")}
-    stmt = insert(Candle)
-    for i in range(0, len(df), _CHUNK):
-        sl = slice(i, i + _CHUNK)
-        rows = [
-            {"symbol_id": int(s), "tf": tf, "ts": int(ts), "o": float(o), "h": float(h), "l": float(l),
-             "c": float(c), "v": float(v), "oi": None}
-            for s, ts, o, h, l, c, v in zip(sid[sl], cols["ts"][sl], cols["o"][sl], cols["h"][sl],  # noqa: E741
-                                           cols["l"][sl], cols["c"][sl], cols["v"][sl])
-        ]
-        session.execute(stmt, rows)
-    session.commit()
+    bar_store().replace_exchange(session, exchange, drop_tfs, tf, sid,
+                                 {k: df[k].to_numpy() for k in ("ts", "o", "h", "l", "c", "v")})
 
 
 # ---- hourly ----------------------------------------------------------------

@@ -1,6 +1,6 @@
 """'Why this trade' edge cases, on the builder directly: US dollars, a missing market.json, the setup multiplier,
 many rules, long rule text, stop notes, and a stop that was not widened."""
-from app.scanner_explain import explain
+from app.adapters.swingscanner.explain import explain
 
 SETUP = {"name": "Pocket pivot", "what": "An up day on volume above every down day.", "why": "Shows buying."}
 ROW = {"symbol": "AAPL", "setup": "PP", "date": "2026-11-17", "valid": "True", "close": "200", "stop": "190",

@@ -27,7 +27,8 @@ def test_drawings_roundtrip(client):
 
 
 def test_us_sessions_are_new_york_time_with_dst():
-    assert market_for("NASDAQ") is US_MARKET and market_for("NSE") is IST_MARKET
+    assert market_for("NASDAQ") == US_MARKET and market_for("NSE") == IST_MARKET     # from the market registry
+    assert market_for("UNLISTED") == IST_MARKET                                       # unknown: the default market
     h1 = TIMEFRAMES["1h"]
     # 09:30 New York = 13:30 UTC in summer (EDT), 14:30 UTC in winter (EST)
     summer, winter = utc(2026, 7, 1, 13, 30), utc(2026, 12, 1, 14, 30)

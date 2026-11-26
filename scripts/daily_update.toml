@@ -1,0 +1,69 @@
+# The daily job's tools (scripts/daily_update.py).
+#
+# The job owns the market calendars, the retries, the logs and the order of the steps:
+#     download (retried until every `done` file exists) -> import -> setup scan per exchange -> slim -> pattern screen
+# The tools are named only here. To replace one (another downloader or data vendor, another CSV layout, another setup
+# scanner), change its command and its `done` file: the script does not change.
+#
+# Placeholders in every string: {app} {backend} {projects} {app_py} {day} (YYYY-MM-DD) {yyyymmdd} {market}
+# {exchanges} (comma list), {exchange} (in per-exchange steps and `done` files) and every [paths] entry, e.g. {eod}.
+# A command argument "{exchanges...}" becomes one argument per exchange.
+
+[paths]
+eod = "{projects}/EOD_Market_Data"                                              # env DAILY_EOD_DIR overrides
+data = "{eod}/market_data_daily"
+scanner = "{projects}/TranscriptExtract/dist/SwingScanner_20261118/SwingScanner"  # env DAILY_SCANNER_DIR overrides
+scanner_src = "{projects}/TranscriptExtract"
+scan_py = "{app}/.tools/scanvenv/Scripts/python.exe"
+
+# calendar: NSE = NSE's trading holidays (nseindia.com, cached per year), US = NYSE holiday rules
+# scan: which [scan.*] profile runs the setup scan
+[markets.NSE]
+exchanges = ["NSE"]
+calendar = "NSE"
+scan = "exe"
+
+[markets.US]
+exchanges = ["NYSE", "NASDAQ"]
+calendar = "US"
+scan = "source"            # SwingScanner.exe fails on the stub US per-symbol files; its source does not
+
+[download]
+cwd = "{eod}"
+command = ["{eod}/venv/Scripts/python.exe", "eod_downloader.py", "--exchanges", "{exchanges...}", "--layout", "daily"]
+done = "{data}/{exchange}/bhavcopy_adjusted/{exchange}_{yyyymmdd}.csv"        # the day is out, per exchange
+timeout_min = 60
+
+[import]
+name = "import {exchanges} into Charting Lab"
+cwd = "{backend}"
+command = ["{app_py}", "-m", "app.cli", "import-eod", "--only", "daily", "--exchanges", "{exchanges}"]
+
+# NSE: --refresh first rebuilds the scanner's own NSE copy (it lags the downloaded files by a day otherwise, and the
+# scan then silently covers the day before). A scan counts as done only when `done` exists for that day.
+[scan.exe]
+name = "setup scan {exchange}"
+cwd = "{scanner}"
+command = ["{scanner}/SwingScanner.exe", "--run-module", "swingbt.scan", "--market", "{exchange}", "--refresh", "--yes",
+           "--date", "{day}", "--offline"]
+done = "{scanner}/scans/{exchange}_daily_{day}/signals.csv"
+
+[scan.source]
+name = "setup scan {exchange}"
+needs = "{scan_py}"                      # when missing, the `fallback` profile runs instead
+fallback = "exe"
+cwd = "{scanner_src}"
+command = ["{scan_py}", "-m", "swingbt.scan", "--market", "{exchange}", "--date", "{day}",
+           "--out", "{scanner}/scans/{exchange}_daily_{day}"]
+env = { SWINGBT_CONFIG = "{scanner}/swingbt_config.ini" }
+done = "{scanner}/scans/{exchange}_daily_{day}/signals.csv"
+
+[slim]
+name = "drop chart pages"
+cwd = "{backend}"
+command = ["{app_py}", "-m", "app.cli", "scanner-slim"]
+
+[screen]
+name = "pattern screen"
+cwd = "{backend}"
+command = ["{app_py}", "-m", "app.cli", "screen", "--exchanges", "{exchanges}", "--tf", "1D,1W", "--days", "5"]

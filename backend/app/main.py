@@ -8,7 +8,7 @@ from sqlalchemy.orm import sessionmaker
 
 from app.ai.analyst import ChartAnalyst
 from app.alerts.engine import AlertEngine
-from app.api import ai, alerts, custom_indicators, drawings, history, indicators, patterns, scanner, scanner_report, screener, symbols, watchlists, ws
+from app.api import ai, alerts, custom_indicators, drawings, history, indicators, patterns, scanner, screener, symbols, watchlists, ws
 from app.config import get_settings
 from app.db import SessionLocal, init_db
 from app.live.service import LiveService
@@ -63,12 +63,22 @@ def create_app(live_factory: LiveFactory = default_live,
         allow_methods=["*"],
         allow_headers=["*"],
     )
-    for r in (symbols, history, indicators, custom_indicators, drawings, patterns, scanner, scanner_report, screener, ws, watchlists, alerts, ai):
+    for r in (symbols, history, indicators, custom_indicators, drawings, patterns, scanner, screener, ws, watchlists, alerts, ai):
         app.include_router(r.router)
+    from app.providers import setup_scanners
+
+    for sc in setup_scanners().values():         # what each setup scanner brings (SwingScanner: its report pages)
+        for r in sc.routers():
+            app.include_router(r)
 
     @app.get("/health")
     def health() -> dict:
+        from app.markets import markets
+
+        live = app.state.live
+        feeds = live.feeds(list(markets())) if live is not None else {m: "none" for m in markets()}
         return {"status": "ok", "data_source": settings.data_source, "live": app.state.live is not None,
+                "feeds": feeds,                 # per exchange: live | simulated | none (last close only)
                 "simulated_ticks": settings.data_source != "kite" and settings.simulate_ticks,
                 # where prices come from: a live feed, simulated ticks, or the last close of the stored data
                 "ticks": "live" if settings.data_source == "kite" else ("simulated" if settings.simulate_ticks else "none"),

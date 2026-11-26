@@ -244,3 +244,24 @@ def _shapes(pid: str, color: str, g: dict, i: int, T) -> list[dict]:
         out.append(seg(g["bo_bar"], g["bo_level"], g["peak_bar"], g["bo_level"], dash=True))
         out.append(seg(g["pull"][0], g["pull_lo"], i, g["pull_lo"], "pullback low", dash=True))
     return out
+
+
+class RulebookPatterns:
+    """app.ports.PatternEngine: the owner's rulebook rules (app/patterns/rules.py) and the chart's S/R levels."""
+
+    name = "rulebook"
+    warmup = WARMUP                     # bars of history the rules need before the first bar they mark
+
+    def catalog(self) -> list[dict]:
+        return [dict(id=p.id, title=p.title, group=p.group, short=p.short, color=p.color, rule=p.rule, about=p.about,
+                     summary=SUMMARY.get(p.id, "")) for p in PATTERNS]
+
+    def ids(self) -> set[str]:
+        return set(BY_ID)
+
+    def signal_ids(self) -> set[str]:
+        """The patterns that are signals on a bar (screened); S/R levels are not."""
+        return set(BY_ID) - {"sr"}
+
+    def scan(self, t, o, h, l, c, v, ids: set[str], first: int = 0) -> dict:  # noqa: E741
+        return scan(t, o, h, l, c, v, ids, first)

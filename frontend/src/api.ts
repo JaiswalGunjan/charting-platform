@@ -151,8 +151,11 @@ export interface ScannerScanInfo {
 }
 
 export interface ScannerStatus {
+  name?: string;               // the setup scanner in use (SETUP_SCANNER), e.g. "swingscanner"
+  title?: string;              // its name on screen, e.g. "SwingScanner"
   configured: boolean;
   online: boolean;
+  scanners?: { name: string; title: string }[];   // every setup scanner in use, the default first
   msg?: string;
   dir?: string;
   markets?: { market: string; ok: boolean; last: string | null; dates: string[]; warning?: string | null }[];
@@ -253,6 +256,7 @@ export interface Health {
   live: boolean;
   simulated_ticks: boolean;
   ticks?: "live" | "simulated" | "none";   // none = prices are the last close of the stored data
+  feeds?: Record<string, "live" | "simulated" | "none">;   // per exchange (a feed per market: TICK_SOURCES)
   intraday_history: "1m" | "1h";
 }
 
@@ -392,13 +396,15 @@ export const api = {
     req<PatternScan>(`/patterns/scan?${qs({ symbol, tf, ids: ids.join(","), limit })}`),
   patternCounts: (symbol: string, tf: string, limit: number) =>
     req<{ counts: Record<string, number>; bars: number }>(`/patterns/counts?${qs({ symbol, tf, limit })}`),
-  scanner: () => req<ScannerStatus>("/scanner"),
-  scannerScan: (id: string) => req<ScannerScan>(`/scanner/scans/${encodeURIComponent(id)}`),
-  scannerRun: (market: string, date?: string) =>
-    req<{ ok: boolean; msg: string }>("/scanner/run", { method: "POST", body: JSON.stringify({ market, date }) }),
-  scannerExplain: (scanId: string, symbol: string, setup: string, near: boolean, equity?: number, riskPct?: number) =>
-    req<SignalExplanation>(`/scanner/scans/${encodeURIComponent(scanId)}/explain?${qs({ symbol, setup, near: near ? "true" : "false", equity, risk_pct: riskPct })}`),
-  scannerJob: (since: number) => req<ScannerJob>(`/scanner/job?since=${since}`),
+  // `scanner`: a setup scanner's name (several can be in use); undefined = the default one
+  scanner: (scanner?: string) => req<ScannerStatus>(`/scanner?${qs({ scanner })}`),
+  scannerScan: (id: string, scanner?: string) => req<ScannerScan>(`/scanner/scans/${encodeURIComponent(id)}?${qs({ scanner })}`),
+  scannerRun: (market: string, date?: string, scanner?: string) =>
+    req<{ ok: boolean; msg: string }>("/scanner/run", { method: "POST", body: JSON.stringify({ market, date, scanner }) }),
+  scannerExplain: (scanId: string, symbol: string, setup: string, near: boolean, equity?: number, riskPct?: number,
+                   scanner?: string) =>
+    req<SignalExplanation>(`/scanner/scans/${encodeURIComponent(scanId)}/explain?${qs({ symbol, setup, near: near ? "true" : "false", equity, risk_pct: riskPct, scanner })}`),
+  scannerJob: (since: number, scanner?: string) => req<ScannerJob>(`/scanner/job?${qs({ since, scanner })}`),
   patternsToday: (exchange: string, tf: string, date?: string) =>
     req<PatternsToday>(`/screener/patterns-today?${qs({ exchange, tf, date: date || undefined })}`),
   runPatternsToday: (exchange: string, tf: string, date?: string) =>

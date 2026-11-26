@@ -5,7 +5,8 @@
 import json
 from datetime import date, timedelta
 
-from app.api import scanner
+from app.adapters.swingscanner import core as scanner
+from app.config import get_settings
 from app.patterns import screener as sc
 from tests.test_m14_scanner import HEADER, row, scan_root  # noqa: F401  (fixture)
 from tests.test_m15b_screener_edges import DAY, LAST, db, fake_hits  # noqa: F401  (fixture)
@@ -145,7 +146,7 @@ def test_backfill_session_lists(db):  # noqa: F811
 
 
 def test_api_dates_and_past_screens(client, monkeypatch, tmp_path):
-    monkeypatch.setattr(sc, "SCREEN_DIR", tmp_path)
+    monkeypatch.setattr(get_settings(), "screens_dir", str(tmp_path))
     for day, n in (("2026-11-23", 3), ("2026-11-20", 1)):
         res = dict(exchange="NSE", tf="1D", as_of=sc.session_ts(day), last_session=sc.session_ts(day), session=day,
                    rows=[dict(ticker=f"S{k}") for k in range(n)], scanned=10)
@@ -166,7 +167,7 @@ def test_api_dates_and_past_screens(client, monkeypatch, tmp_path):
 
 
 def test_a_date_without_its_own_screen_gets_the_session_before(client, monkeypatch, tmp_path):
-    monkeypatch.setattr(sc, "SCREEN_DIR", tmp_path)
+    monkeypatch.setattr(get_settings(), "screens_dir", str(tmp_path))
     for tf, day in (("1D", "2026-11-20"), ("1D", "2026-11-13"), ("1W", "2026-11-20")):  # Fridays
         (tmp_path / f"NSE_{tf}_{day}.json").write_text(json.dumps(dict(session=day, rows=[], scanned=1)))
     get = lambda tf, d: client.get("/screener/patterns-today", params=dict(tf=tf, date=d)).json()  # noqa: E731
@@ -180,7 +181,7 @@ def test_a_date_without_its_own_screen_gets_the_session_before(client, monkeypat
 
 def test_a_saved_screen_is_not_screened_again(client, monkeypatch, tmp_path):
     from app.api import screener as api_sc
-    monkeypatch.setattr(sc, "SCREEN_DIR", tmp_path)
+    monkeypatch.setattr(get_settings(), "screens_dir", str(tmp_path))
     latest = client.get("/screener/patterns-today", params=dict(exchange="NSE", tf="1D")).json()["latest_session"]
     assert latest                                                      # the newest session with data
     (tmp_path / f"NSE_1D_{latest}.json").write_text(json.dumps(dict(session=latest, rows=[], scanned=1)))

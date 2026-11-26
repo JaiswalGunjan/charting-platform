@@ -11,6 +11,8 @@ import { positionSize } from "./sizing";
 import PatternMenu, { DEFAULT_PATTERNS } from "./PatternMenu";
 import { RANGES, timeframeForRange, type RangeId } from "./ranges";
 import { useTheme, type Theme } from "./theme";
+import { currencyOf } from "./markets";
+import { defaultEquity, equityKey } from "./ScannerPanel";
 
 const TF_SHORT: Record<string, string> = { "1D": "D", "1W": "W", "1M": "M", "1Y": "Y" };
 const TF_GROUPS: [string, string[]][] = [
@@ -47,10 +49,10 @@ type Dialog =
 const NO_LEVELS: KeyLevel[] = [];
 const NO_ALERTS: Alert[] = [];   // price alerts are off on the chart page (removed at the owner's request, 25 Nov 2026)
 
-/** A scanner signal sized with the portfolio and risk the Setup Screener saved (rupees for NSE/BSE, dollars for US). */
+/** A scanner signal sized with the portfolio and risk the Setup Screener saved (in the scan market's currency). */
 function sizedSignal(scan: { market: string; risk_mult: number | null; max_alloc_pct: number }, s: ScannerSignal): ScannerSignal {
-  const us = scan.market === "NYSE" || scan.market === "NASDAQ";
-  const equity = Number(localStorage.getItem(us ? "scanner.equityUsd" : "scanner.equity")) || (us ? 100_000 : 1_000_000);
+  const cur = currencyOf(scan.market);
+  const equity = Number(localStorage.getItem(equityKey(cur))) || defaultEquity(cur);
   const riskPct = Number(localStorage.getItem("scanner.riskPct")) || 1;
   if (!s.valid || s.entry == null || s.stop == null) return { ...s, shares: null, value: null };
   const z = positionSize({ equity, entry: s.entry, stop: s.stop, riskPct, riskMult: scan.risk_mult ?? 1,
@@ -81,9 +83,9 @@ export default function App() {
     const sym = q.get("symbol");
     if (!sym) return;
     window.history.replaceState(null, "", window.location.pathname);
-    const scanId = q.get("scan"), setup = q.get("setup");
+    const scanId = q.get("scan"), setup = q.get("setup"), scanner = q.get("scanner") ?? undefined;
     if (scanId && setup) {
-      api.scannerScan(scanId).then((scan) => {
+      api.scannerScan(scanId, scanner).then((scan) => {
         const list = q.get("near") === "1" ? [...scan.near_misses, ...scan.signals] : [...scan.signals, ...scan.near_misses];
         const sig = list.find((r) => r.ticker === sym && r.setup === setup);
         if (sig) openSignal(sizedSignal(scan, sig));
@@ -153,6 +155,10 @@ export default function App() {
 
   const chg = quote?.change ?? 0;
   const hourlyOnly = health?.intraday_history === "1h";
+  // what this symbol's exchange streams: each market can have its own feed (or none)
+  const exchange = symbol.split(":")[0];
+  const feed = health?.feeds?.[exchange]
+    ?? (health?.ticks === "none" ? "none" : health?.simulated_ticks ? "simulated" : "live");
 
   const pickTf = (t: string) => {
     setTf(t);
@@ -224,16 +230,16 @@ export default function App() {
         <a className="toolbar-link" href="/?page=screener"
           title="The patterns formed on a session's daily or weekly bar, every stock">▦ Pattern Screener</a>
         <a className="toolbar-link" href="/?page=setups"
-          title="The SwingScanner's breakouts by date and market, with entry, stop, quantity and why">▤ Setup Screener</a>
+          title="Breakouts by date and market, with entry, stop, quantity and why">▤ Setup Screener</a>
         <div className="spacer" />
         <span
-          className={`conn ${conn}${health?.simulated_ticks ? " sim" : ""}${health?.ticks === "none" ? " eod" : ""}`}
-          title={health?.ticks === "none"
-            ? "No live feed: prices are the last close of your daily data (nothing is simulated)"
-            : health?.simulated_ticks ? "Ticks are simulated (random walk from the last real close) and never saved"
-            : `live feed: ${conn}`}
+          className={`conn ${conn}${feed === "simulated" ? " sim" : ""}${feed === "none" ? " eod" : ""}`}
+          title={feed === "none"
+            ? `No live feed for ${exchange}: prices are the last close of your daily data (nothing is simulated)`
+            : feed === "simulated" ? `${exchange} ticks are simulated (random walk from the last real close) and never saved`
+            : `${exchange} live feed: ${conn}`}
         >
-          ● {conn !== "open" ? conn : health?.ticks === "none" ? "Last close" : health?.simulated_ticks ? "Simulated ticks" : "Live"}
+          ● {conn !== "open" ? conn : feed === "none" ? "Last close" : feed === "simulated" ? "Simulated ticks" : "Live"}
         </span>
         <button className="theme-toggle" title={theme === "dark" ? "Switch to day view" : "Switch to night view"}
           onClick={() => setThemeChoice(theme === "dark" ? "light" : "dark")}>

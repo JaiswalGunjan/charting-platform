@@ -62,9 +62,9 @@ un-tests.ps1 -SkipE2E # without the browser tests
 
 | Suite | Where | What it guards |
 |---|---|---|
-| Backend, pytest (306) | `backend/tests/` | data import (daily/hourly/names/CLI), every timeframe incl. US sessions and paging, all 50 indicators vs reference maths, formula language and its sandbox, live bars and WebSocket, alerts, watchlists, AI analyst (fake LLM), drawings API, chart patterns (parity with swingbt when present) |
-| Frontend unit, Vitest (71) | `frontend/tests/unit/` | date-range presets (incl. month-end clamping), time zones and DST, drawing geometry, time<->pixel mapping and hit-testing, indicator labels/styles, number formats |
-| Browser end-to-end, Playwright (24) | `frontend/tests/e2e/` | every user flow in a real browser: load, live ticks, symbol search, timeframe menu, ranges, theme, indicators and settings, custom formulas, drawing tools and saving, pattern menu and counts, alerts |
+| Backend, pytest (345 + 5 on PostgreSQL) | `backend/tests/` | data import (daily/hourly/names/CLI), every timeframe incl. US sessions and paging, all 50 indicators vs reference maths, formula language and its sandbox, live bars and WebSocket, alerts, watchlists, AI analyst (fake LLM), drawings API, chart patterns (parity with swingbt when present), screeners, the daily job, replaceable parts (fake adapters) and the API contract |
+| Frontend unit, Vitest (75) | `frontend/tests/unit/` | date-range presets (incl. month-end clamping), time zones and DST, drawing geometry, time<->pixel mapping and hit-testing, indicator labels/styles, number formats |
+| Browser end-to-end, Playwright (25) | `frontend/tests/e2e/` | every user flow in a real browser: load, live ticks, symbol search, timeframe menu, ranges, theme, indicators and settings, custom formulas, drawing tools and saving, pattern menu and counts, alerts |
 
 The end-to-end tests start their own backend on :8010 with a fresh, seeded synthetic database and a dev server
 on :5180, so your data and running servers are never touched. Locally they use the installed Microsoft Edge;
@@ -163,8 +163,10 @@ backfill). API: `GET /screener/patterns-today?exchange&tf[&date]` (with the save
 
 ## SwingScanner connection
 
-**▤ Setup Screener ↗** (next to the Pattern Screener in the top bar) opens the scanner view below as its own page in
-a new tab (`/?page=setups`); a signal there opens its chart in a Charting Lab tab.
+**▤ Setup Screener** (next to the Pattern Screener in the top bar) opens the scanner view below as its own page
+(`/?page=setups`, same tab); a signal there opens its chart in a Charting Lab tab. The SwingScanner is the setup
+scanner in use (`SETUP_SCANNER=swingscanner`); its code is all in `backend/app/adapters/swingscanner/`, and another
+scanner can take its place (see [Replaceable parts](#replaceable-parts)).
 
 Set `SCANNER_DIR` in `.env` to the SwingScanner folder (the one with `SwingScanner.exe`). The **Setup
 Screener** page then shows its saved scans: pick **1 Date** (a calendar over the saved scans; a weekend or holiday
@@ -207,11 +209,38 @@ Parsing uses Python's `ast` with a whitelist of node types and names, and evalua
 numpy interpreter, so nothing reaches `eval`. This is meant as the first slice of our own
 scripting language, not a final syntax (`backend/app/indicators/formula.py`).
 
+## Replaceable parts
+
+The product layer names none of the tools it runs on. Each sits behind a small interface (`backend/app/ports.py`)
+and is chosen by a setting in `.env` (a built-in name, or any class as `package.module:Class`):
+
+| Part | Setting | Built in | Several |
+|---|---|---|---|
+| Setup scanner | `SETUP_SCANNER` | `swingscanner`, `none` | `SETUP_SCANNERS` (side by side, picker on the Setup Screener) |
+| Pattern detector | `PATTERN_ENGINE` | `rulebook` | `PATTERN_ENGINES` (one combined catalog) |
+| Screen storage | `SCREEN_STORE` | `json` | |
+| Price-bar storage | `BAR_STORE` | `sql` (SQLite or PostgreSQL/TimescaleDB by `DATABASE_URL`) | `BAR_STORES` (a store per timeframe, e.g. minute bars apart) |
+| Live feed | `TICK_SOURCES` | `kite`, `synthetic`, `static` | a feed per exchange |
+| Markets | `backend/app/markets.toml` (`GET /markets`) | NSE, BSE, NYSE, NASDAQ | a market = one entry |
+| Market data source | `DATA_SOURCE` | `synthetic`, `kite`, `eod` | |
+| Daily tools (downloader, import, scanner) | `scripts/daily_update.toml` | EOD downloader, `import-eod`, SwingScanner | |
+| UI | `docs/api/openapi.json` and `docs/api/websocket.md` (the contracts; the HTTP one is checked by a test) | React app | |
+
+Minute bars live in PostgreSQL + TimescaleDB, the last 2 years (`BAR_STORES=1m=timescale`, `MINUTE_DATABASE_URL`;
+`run-demo.ps1` starts the local server; `python -m app.cli minute-store` shows its size and applies its compression
+and retention policies). How to write a replacement, what each interface promises, and the plan for 10–12 markets:
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+The tests plug in a fake of each (`backend/tests/test_m21_ports.py`) to prove the product works with it.
+
 ## Layout
 
 ```
 backend/app/
-  marketdata/   sources (synthetic, kite), loader, timeframes + resampling, history paging
+  ports.py      the interfaces of the replaceable parts; providers.py picks an adapter for each from settings
+  adapters/     swingscanner/ (the SwingScanner: folders, server, explanations, report), null.py (parts switched off)
+  marketdata/   sources (synthetic, kite, eod), loader, barstore.py (the only SQL on bars), timeframes + resampling,
+                history paging
+  patterns/     rulebook rules (generated), engine (PatternEngine), screener, store.py (ScreenStore: JSON files)
   indicators/   numpy math (core, extra), registry of 50 (params, plots, warm-up), formula.py (custom)
   live/         tick sources, forming bars, live store (Redis/memory), LiveService + conflation
   alerts/       alert engine (tick listener)
@@ -248,7 +277,8 @@ the SwingScanner or the generated pattern rules is rewritten by `backend/app/wor
 | Charting Lab - NSE daily update | weekdays 18:30 | today's NSE session | weekends, NSE trading holidays (NSE's own list from nseindia.com, cached per year in `backend/data/nse_holidays.json`) |
 | Charting Lab - US daily update | every day 08:00 | the New York session that closed overnight | New York weekends, US market holidays (NYSE rules, computed) |
 
-Each run downloads the day with the EOD downloader (`EOD_Market_Data/eod_downloader.py --exchanges NSE` or
+The tools each step runs are named only in `scripts/daily_update.toml` (another vendor or scanner = an edit
+there). Today, each run downloads the day with the EOD downloader (`EOD_Market_Data/eod_downloader.py --exchanges NSE` or
 `NYSE NASDAQ`) until every day file (`market_data_daily/<EX>/bhavcopy_adjusted/<EX>_<YYYYMMDD>.csv`) exists: the first try
 starts a random 0-8 minutes late, then 5 retries ~5 minutes apart and 5 retries ~10 minutes apart (each wait +/-20% at
 random), then it gives up for the day. After a download it imports the day into Charting Lab, runs the setup scan(s)

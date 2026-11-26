@@ -56,8 +56,10 @@ def day_ts(d: date) -> int:
 
 
 def parse_symbol(s: str) -> tuple[str, str]:
-    """'NSE:RELIANCE' -> ('NSE', 'RELIANCE'); bare 'RELIANCE' defaults to NSE."""
+    """'NSE:RELIANCE' -> ('NSE', 'RELIANCE'); a bare 'RELIANCE' is on the default market (the registry's first)."""
     if ":" in s:
         ex, t = s.split(":", 1)
         return ex.strip().upper(), t.strip().upper()
-    return "NSE", s.strip().upper()
+    from app.markets import default_exchange
+
+    return default_exchange(), s.strip().upper()

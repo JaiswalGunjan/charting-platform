@@ -1,4 +1,5 @@
-"""Read candles for any timeframe, paging backwards from a cursor."""
+"""Read candles for any timeframe, paging backwards from a cursor. Stored bars come from the bar store in use
+(BAR_STORE, app.ports.BarStore); other timeframes are resampled here."""
 from dataclasses import dataclass
 
 import numpy as np
@@ -6,7 +7,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.marketdata.timeframes import IST_MARKET, Market, Timeframe, market_for, resample
-from app.models import Candle, Symbol
+from app.models import Symbol
+from app.providers import bar_store
 
 
 @dataclass
@@ -33,10 +35,9 @@ def pick_base(session: Session, symbol_id: int, tf: Timeframe) -> str:
     """The best stored base for this symbol (e.g. imported 1h bars over 1m)."""
     if len(tf.bases) == 1:
         return tf.base
+    store = bar_store()
     for base in tf.bases[:-1]:
-        hit = session.execute(select(Candle.ts).where(Candle.symbol_id == symbol_id, Candle.tf == base)
-                              .limit(1)).first()
-        if hit is not None:
+        if store.has(session, symbol_id, base):
             return base
     return tf.base
 
@@ -51,19 +52,13 @@ def get_bars(session: Session, symbol_id: int, tf: Timeframe, *, limit: int,
     base = pick_base(session, symbol_id, tf)
     per_bar = tf.per_bar(base)
     fetch_n = limit * per_bar + per_bar
-    stmt = (select(Candle.ts, Candle.o, Candle.h, Candle.l, Candle.c, Candle.v)
-            .where(Candle.symbol_id == symbol_id, Candle.tf == base))
-    if to is not None:
-        stmt = stmt.where(Candle.ts < to)
-    if frm is not None:
-        stmt = stmt.where(Candle.ts >= frm)
-    rows = session.execute(stmt.order_by(Candle.ts.desc()).limit(fetch_n)).all()
+    rows = bar_store().read_latest(session, symbol_id, base, fetch_n, to=to, frm=frm)
     truncated = len(rows) == fetch_n
-    if not rows:
+    if not len(rows):
         empty = np.array([], dtype=float)
         return Bars(empty.astype(np.int64), empty, empty, empty, empty, empty, False)
 
-    cols = np.array(rows[::-1], dtype=float).T
+    cols = rows.T
     market = symbol_market(session, symbol_id) if tf.intraday else IST_MARKET
     t, o, h, l, c, v = resample(tf, cols[0].astype(np.int64), *cols[1:], market=market)  # noqa: E741
     if truncated and per_bar > 1:
@@ -82,14 +77,11 @@ def get_bars_after(session: Session, symbol_id: int, tf: Timeframe, *, frm: int,
     base = pick_base(session, symbol_id, tf)
     per_bar = tf.per_bar(base)
     fetch_n = (limit + 1) * per_bar
-    rows = session.execute(
-        select(Candle.ts, Candle.o, Candle.h, Candle.l, Candle.c, Candle.v)
-        .where(Candle.symbol_id == symbol_id, Candle.tf == base, Candle.ts >= frm)
-        .order_by(Candle.ts).limit(fetch_n)).all()
-    if not rows:
+    rows = bar_store().read_after(session, symbol_id, base, frm, fetch_n)
+    if not len(rows):
         empty = np.array([], dtype=float)
         return Bars(empty.astype(np.int64), empty, empty, empty, empty, empty, False)
-    cols = np.array(rows, dtype=float).T
+    cols = rows.T
     market = symbol_market(session, symbol_id) if tf.intraday else IST_MARKET
     arrs = resample(tf, cols[0].astype(np.int64), *cols[1:], market=market)
     if len(rows) == fetch_n and per_bar > 1:

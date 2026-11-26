@@ -7,11 +7,13 @@
 Each run:
   1. skips a day the market was closed: weekends, and NSE trading holidays (NSE's own list from nseindia.com, cached
      per year) or US market holidays (NYSE rules, computed here)
-  2. downloads the day with the EOD downloader (EOD_Market_Data/eod_downloader.py) until its day file(s) exist in
-     market_data_daily/<EX>/bhavcopy_adjusted/: first try, then 5 retries ~5 minutes apart and 5 retries ~10 minutes
-     apart (each wait +/-20% at random, and the first try starts a random 0-8 minutes late), then gives up for the day
-  3. imports the day into Charting Lab, runs the setup scan (skipped when saved) and drops its chart pages, then runs
-     the pattern screens (daily and weekly; saved sessions are skipped)
+  2. downloads the day until its `done` file(s) exist: first try, then 5 retries ~5 minutes apart and 5 retries ~10
+     minutes apart (each wait +/-20% at random, and the first try starts a random 0-8 minutes late), then gives up
+  3. imports the day into Charting Lab, runs the setup scan of each exchange (skipped when its `done` file exists),
+     slims the scans, then runs the pattern screens (daily and weekly; saved sessions are skipped)
+
+The tools each step runs (today: the EOD downloader, Charting Lab's CSV import, the SwingScanner) are named only in
+scripts/daily_update.toml (or --config / DAILY_CONFIG): replacing one is an edit there, not here.
 
 Logs: backend/data/logs/daily_<market>_<date>.log; the last result in backend/data/logs/daily_<market>_status.json.
 """
@@ -21,9 +23,11 @@ import json
 import logging
 import os
 import random
+import re
 import subprocess
 import sys
 import time
+import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -32,13 +36,9 @@ HERE = Path(__file__).resolve().parent
 APP = HERE.parent                                            # Charting-platform
 BACKEND = APP / "backend"
 APP_PY = APP / ".venv" / "Scripts" / "python.exe"
-SCAN_PY = APP / ".tools" / "scanvenv" / "Scripts" / "python.exe"    # runs the scanner's source (US scans)
 PROJECTS = APP.parent
-EOD = Path(os.environ.get("DAILY_EOD_DIR", PROJECTS / "EOD_Market_Data"))
-EOD_PY = EOD / "venv" / "Scripts" / "python.exe"
-DAILY = EOD / "market_data_daily"
-SCANNER_SRC = PROJECTS / "TranscriptExtract"
-SCANNER = Path(os.environ.get("DAILY_SCANNER_DIR", SCANNER_SRC / "dist" / "SwingScanner_20261118" / "SwingScanner"))
+CONFIG = Path(os.environ.get("DAILY_CONFIG", HERE / "daily_update.toml"))
+ENV_PATHS = {"eod": "DAILY_EOD_DIR", "scanner": "DAILY_SCANNER_DIR"}    # environment overrides of [paths]
 LOGS = BACKEND / "data" / "logs"
 NSE_HOLIDAYS = BACKEND / "data" / "nse_holidays.json"
 WAITS_MIN = [5] * 5 + [10] * 5          # between attempts: 5 x 5 minutes, then 5 x 10 minutes
@@ -50,17 +50,88 @@ NEW_YORK = ZoneInfo("America/New_York")
 log = logging.getLogger("daily_update")
 
 
+def load_config(path: Path = CONFIG) -> dict:
+    cfg = tomllib.loads(path.read_text(encoding="utf-8"))
+    for key, env in ENV_PATHS.items():
+        if os.environ.get(env):
+            cfg.setdefault("paths", {})[key] = os.environ[env]
+    return cfg
+
+
+CFG = load_config()
+
+
 @dataclass(frozen=True)
 class Market:
     name: str                  # NSE | US
     exchanges: tuple           # the exchanges downloaded, imported, scanned and screened
-    scan_with_source: bool     # US: SwingScanner.exe fails on the stub per-symbol files; the source does not
+    calendar: str              # NSE | US: whose holidays and which session a run updates
+    scan: str                  # the [scan.*] profile of the config
 
 
-MARKETS = {"NSE": Market("NSE", ("NSE",), False), "US": Market("US", ("NYSE", "NASDAQ"), True)}
+def markets(cfg: dict | None = None) -> dict[str, Market]:
+    cfg = cfg if cfg is not None else CFG
+    return {k: Market(k, tuple(m["exchanges"]), m.get("calendar", k), m.get("scan", "exe"))
+            for k, m in cfg.get("markets", {}).items()}
 
 
-# ---------------------------------------------------------------- holidays
+MARKETS = markets()
+
+
+# ---------------------------------------------------------------- the config's placeholders
+_FIELD = re.compile(r"\{([a-z_]+)\}")
+
+
+def _context(market: Market | None = None, day: dt.date | None = None, exchange: str | None = None) -> dict:
+    ctx = dict(app=APP, backend=BACKEND, projects=PROJECTS, app_py=APP_PY)
+    if market is not None:
+        ctx.update(market=market.name, exchanges=",".join(market.exchanges))
+    if day is not None:
+        ctx.update(day=day.isoformat(), yyyymmdd=f"{day:%Y%m%d}")
+    if exchange is not None:
+        ctx["exchange"] = exchange
+    return {k: str(v) for k, v in ctx.items()}
+
+
+def fill(text: str, ctx: dict) -> str:
+    """`text` with its {placeholders} filled from `ctx` and the config's [paths] (which may use each other)."""
+    paths = CFG.get("paths", {})
+
+    def one(m: re.Match) -> str:
+        k = m.group(1)
+        if k in ctx:
+            return ctx[k]
+        if k in paths:
+            return fill(paths[k], ctx)
+        raise KeyError(f"unknown placeholder {{{k}}} in {text!r} ({CONFIG})")
+    return _FIELD.sub(one, text)
+
+
+def path(name: str) -> Path:
+    """A [paths] entry of the config."""
+    return Path(fill("{" + name + "}", _context()))
+
+
+def command(step: dict, market: Market, day: dt.date, exchange: str | None = None) -> list[str]:
+    ctx = _context(market, day, exchange)
+    out: list[str] = []
+    for arg in step["command"]:
+        out += list(market.exchanges) if arg == "{exchanges...}" else [fill(arg, ctx)]
+    return out
+
+
+def run_step(step: dict, market: Market, day: dt.date, exchange: str | None = None, name: str | None = None,
+             timeout: int = 3 * 3600) -> bool:
+    ctx = _context(market, day, exchange)
+    env = {k: fill(v, ctx) for k, v in step.get("env", {}).items()} or None
+    return run(command(step, market, day, exchange), Path(fill(step.get("cwd", "{app}"), ctx)),
+               name or fill(step.get("name", "step"), ctx), timeout=timeout, env=env)
+
+
+def done_file(step: dict, market: Market, day: dt.date, exchange: str) -> Path | None:
+    return Path(fill(step["done"], _context(market, day, exchange))) if step.get("done") else None
+
+
 def fetch_nse_holidays(year: int) -> list[str]:
     """NSE's trading holidays (capital market segment) for `year`, as ISO dates, from nseindia.com."""
     import requests
@@ -154,7 +225,7 @@ def us_holidays(year: int) -> set[str]:
 def trading_day(market: Market, day: dt.date) -> tuple[bool, str]:
     if day.weekday() >= 5:
         return False, "weekend"
-    if market.name == "US":
+    if market.calendar == "US":
         return (False, "US market holiday") if day.isoformat() in us_holidays(day.year) else (True, "trading day")
     hol = nse_holidays(day.year)
     if hol is not None and day.isoformat() in hol:
@@ -166,15 +237,17 @@ def session_day(market: Market, now: dt.datetime | None = None) -> dt.date:
     """The session to update: NSE = today in India; US = the New York session that has closed (at 08:00 India time
     it is the previous evening in New York, so that day)."""
     now = now or dt.datetime.now(dt.timezone.utc)
-    if market.name == "US":
+    if market.calendar == "US":
         ny = now.astimezone(NEW_YORK)
         return ny.date() if ny.time() >= dt.time(17, 0) else ny.date() - dt.timedelta(1)
     return now.astimezone(IST).date()
 
 
 # ---------------------------------------------------------------- steps
-def day_file(exchange: str, day: dt.date) -> Path:
-    return DAILY / exchange / "bhavcopy_adjusted" / f"{exchange}_{day:%Y%m%d}.csv"
+def day_file(exchange: str, day: dt.date, market: Market | None = None) -> Path:
+    """The file that shows the day's data of `exchange` is out (the download's `done`)."""
+    market = market or next((m for m in MARKETS.values() if exchange in m.exchanges), Market("", (exchange,), "", ""))
+    return done_file(CFG["download"], market, day, exchange)
 
 
 def jittered(seconds: float) -> float:
@@ -195,9 +268,9 @@ def run(cmd: list, cwd: Path, name: str, timeout: int = 3 * 3600, env: dict | No
 
 
 def download(market: Market, day: dt.date, dry: bool, sleep=time.sleep) -> bool:
-    """Run the EOD downloader until the day file of every exchange exists: first try (a random few minutes late),
+    """Run the download step until the `done` file of every exchange exists: first try (a random few minutes late),
     then 5 waits of ~5 minutes and 5 of ~10 minutes."""
-    targets = [day_file(ex, day) for ex in market.exchanges]
+    targets = [day_file(ex, day, market) for ex in market.exchanges]
     if all(t.is_file() for t in targets):
         log.info("%s data for %s is already here", market.name, day)
         return True
@@ -209,8 +282,9 @@ def download(market: Market, day: dt.date, dry: bool, sleep=time.sleep) -> bool:
     log.info("starting in %.1f minutes (random, so the requests are not at the same second every day)", first / 60)
     sleep(first)
     for attempt in range(len(WAITS_MIN) + 1):
-        run([EOD_PY, "eod_downloader.py", "--exchanges", *market.exchanges, "--layout", "daily"], EOD,
-            f"download (attempt {attempt + 1}/{len(WAITS_MIN) + 1})", timeout=3600)
+        dl = CFG["download"]
+        run_step(dl, market, day, name=f"download (attempt {attempt + 1}/{len(WAITS_MIN) + 1})",
+                 timeout=int(dl.get("timeout_min", 60)) * 60)
         missing = [t.name for t in targets if not t.is_file()]
         if not missing:
             log.info("%s data for %s downloaded", market.name, day)
@@ -224,22 +298,26 @@ def download(market: Market, day: dt.date, dry: bool, sleep=time.sleep) -> bool:
     return False
 
 
+def scan_profile(market: Market) -> dict:
+    prof = CFG["scan"][market.scan]
+    needs = prof.get("needs")
+    if needs and not Path(fill(needs, _context(market))).is_file() and prof.get("fallback"):
+        prof = CFG["scan"][prof["fallback"]]
+    return prof
+
+
 def scan(market: Market, exchange: str, day: dt.date) -> bool:
-    """The setup scan of one exchange and day, unless it is saved."""
-    out = SCANNER / "scans" / f"{exchange}_daily_{day:%Y-%m-%d}"
-    if (out / "signals.csv").is_file():
+    """The setup scan of one exchange and day, unless its `done` file exists."""
+    prof = scan_profile(market)
+    done = done_file(prof, market, day, exchange)
+    if done is not None and done.is_file():
         log.info("setup scan %s %s is already saved", exchange, day)
         return True
-    if market.scan_with_source and SCAN_PY.is_file():
-        run([SCAN_PY, "-m", "swingbt.scan", "--market", exchange, "--date", day.isoformat(), "--out", out],
-            SCANNER_SRC, f"setup scan {exchange}", env={"SWINGBT_CONFIG": str(SCANNER / "swingbt_config.ini")})
-    else:
-        # --refresh first rebuilds the scanner's own NSE copy (it lags the downloaded files by a day otherwise, and the
-        # scan then silently covers the day before)
-        run([SCANNER / "SwingScanner.exe", "--run-module", "swingbt.scan", "--market", exchange, "--refresh", "--yes",
-             "--date", day.isoformat(), "--offline"], SCANNER, f"setup scan {exchange}")
-    # done only when that day's scan is saved (the scanner exits normally after scanning an earlier day too)
-    if (out / "signals.csv").is_file():
+    ok = run_step(prof, market, day, exchange)
+    if done is None:
+        return ok
+    # done only when that day's scan is saved (a scanner may exit normally after scanning an earlier day)
+    if done.is_file():
         return True
     log.error("setup scan %s %s: no scan of that day was saved", exchange, day)
     return False
@@ -248,15 +326,14 @@ def scan(market: Market, exchange: str, day: dt.date) -> bool:
 def after_download(market: Market, day: dt.date, dry: bool) -> dict:
     ex = ",".join(market.exchanges)
     if dry:
-        log.info("[dry run] would import %s into Charting Lab, run the setup scan(s) for %s, drop their chart pages "
+        log.info("[dry run] would import %s into Charting Lab, run the setup scan(s) for %s, slim them "
                  "and run the pattern screens", ex, day)
         return dict(import_eod="dry run", setup_scan="dry run", pattern_screen="dry run")
-    steps = {"import_eod": run([APP_PY, "-m", "app.cli", "import-eod", "--only", "daily", "--exchanges", ex], BACKEND,
-                               f"import {ex} into Charting Lab")}
+    steps = {"import_eod": run_step(CFG["import"], market, day)}
     steps["setup_scan"] = all([scan(market, e, day) for e in market.exchanges])
-    run([APP_PY, "-m", "app.cli", "scanner-slim"], BACKEND, "drop chart pages")
-    steps["pattern_screen"] = run([APP_PY, "-m", "app.cli", "screen", "--exchanges", ex, "--tf", "1D,1W", "--days", "5"],
-                                  BACKEND, "pattern screen")
+    if CFG.get("slim"):
+        run_step(CFG["slim"], market, day)
+    steps["pattern_screen"] = run_step(CFG["screen"], market, day)
     return steps
 
 
