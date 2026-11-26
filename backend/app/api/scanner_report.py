@@ -18,6 +18,7 @@ from fastapi.responses import RedirectResponse, Response
 
 from app.api.scanner import SCAN_ID, _rows, scanner_dir, scans_dir
 from app.config import get_settings
+from app.wording import neutral_html
 
 router = APIRouter(prefix="/scanner/report", tags=["scanner"])
 ASSETS = Path(__file__).resolve().parent.parent / "static"
@@ -115,7 +116,7 @@ def report_file(path: str, raw: bool = False) -> Response:
         raise HTTPException(404, "no such report file")
     name = rel.lower()
     if name.endswith(".html") or "text/html" in ctype:
-        text = restyle_js(data.decode("utf-8", "replace"))   # inline scripts too, before our own is added
+        text = neutral_html(restyle_js(data.decode("utf-8", "replace")))   # page text without buy/sell words
         return Response(restyle_html(text), media_type="text/html; charset=utf-8", headers={"cache-control": "no-cache"})
     if name.endswith(".js") and "/_lib/" in "/" + rel.replace("\\", "/"):
         return Response(restyle_js(data.decode("utf-8", "replace")), media_type="text/javascript",

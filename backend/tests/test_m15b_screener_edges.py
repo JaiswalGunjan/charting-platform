@@ -60,7 +60,9 @@ def test_row_figures(db, monkeypatch):
     v = np.array([x.v for x in b])
     assert row["close"] == round(c[-1], 4) and row["volume"] == v[-1]
     assert row["change_pct"] == round((c[-1] / c[-2] - 1) * 100, 2)
-    assert row["turnover"] == round(float(np.median(c[-50:] * v[-50:])), 0)
+    h = np.array([x.h for x in b])
+    lo = np.array([x.l for x in b])
+    assert row["turnover"] == round(float(np.mean(((h + lo + c) / 3 * v)[-20:])), 0)   # 20-day average, typical price
     assert row["symbol"] == "NSE:FRESH" and row["name"] == "FRESH Ltd" and row["patterns"] == ["pp"]
     assert row["hits"][0]["notes"] == ["n1", "n2"]                                   # notes trimmed to two
 
@@ -116,7 +118,8 @@ def test_job_error_is_reported(client, monkeypatch, tmp_path):
     assert client.get("/screener/patterns-today", params=dict(exchange="NSE", tf="1D")).json()["missing"] is True
 
 
-def test_only_one_screen_at_a_time(client):
+def test_only_one_screen_at_a_time(client, monkeypatch, tmp_path):
+    monkeypatch.setattr(sc, "SCREEN_DIR", tmp_path)                 # nothing saved yet
     assert api_sc._LOCK.acquire(blocking=False)
     try:
         r = client.post("/screener/patterns-today/run", json=dict(exchange="NSE", tf="1W"))
@@ -124,3 +127,28 @@ def test_only_one_screen_at_a_time(client):
     finally:
         api_sc._LOCK.release()
     assert client.post("/screener/patterns-today/run", json=dict(exchange="NSE", tf="5m")).status_code == 400
+
+
+def test_turnover_average_and_htq():
+    """Average daily turnover = mean of typical price x volume over 20 sessions; HTQ = that average at its quarter high."""
+    n = 90
+    h, l, c = np.full(n, 102.0), np.full(n, 98.0), np.full(n, 100.0)       # typical price 100
+    v = np.full(n, 1000.0)
+    daily, avg = sc.turnover_series(h, l, c, v)
+    assert daily[-1] == 100_000 and avg[-1] == 100_000 and np.isnan(avg[18]) and avg[19] == 100_000
+    v2 = v.copy()
+    v2[-5:] = 5000.0                                                        # money flows in over the last week
+    _, avg2 = sc.turnover_series(h, l, c, v2)
+    assert avg2[-1] == (15 * 100_000 + 5 * 500_000) / 20
+
+
+def test_turnover_figures_from_the_daily_bars(db):  # noqa: F811
+    figs = sc.turnover_figures(db, "NSE", ["FRESH", "STALE", "NOPE"], LAST)
+    assert set(figs) == {"FRESH", "STALE"}                                  # unknown tickers are left out
+    b = bars(300, LAST, seed=1)
+    tp = np.array([(x.h + x.l + x.c) / 3 * x.v for x in b])
+    assert figs["FRESH"]["turnover"] == round(float(tp[-20:].mean()), 0)
+    assert figs["FRESH"]["turnover_day"] == round(float(tp[-1]), 0)
+    assert isinstance(figs["FRESH"]["htq"], bool)
+    res = sc.with_turnover(db, dict(exchange="NSE", last_session=LAST, rows=[dict(ticker="FRESH", turnover=1)]))
+    assert res["rows"][0]["turnover"] == figs["FRESH"]["turnover"] and "20-day" in res["turnover_basis"]

@@ -117,12 +117,12 @@ export interface ScannerSignal {
   setup_name: string;    // "Bad break recovery"
   entry: number | null;  // the scanner's entry = signal-day close
   risk: number | null;   // entry - stop, per share
-  buy: boolean;          // valid and "would buy"
+  buy: boolean;          // valid and a breakout (the scanner's "would buy" status)
   size_mult: number | null;  // setup multiplier used in sizing
   name?: string;             // company name from our symbol list ("" when unknown)
   pattern: string;       // matching chart pattern id, "" if none
   valid: boolean;
-  status: string;        // "would buy", ...
+  status: string;        // "breakout", "blocked by the market rule", ... (shown as is)
   rank: number | null;
   close: number | null;
   stop: number | null;
@@ -158,6 +158,17 @@ export interface ScannerStatus {
   scans: ScannerScanInfo[];
 }
 
+export interface MarketNote {
+  blocked: boolean;            // no new entries that day (multiplier 0 or the 10-day-low warning)
+  multiplier: number | null;
+  index: string;               // the small-cap index the rule reads (Nifty SmallCap 250, Russell 2000)
+  regime: string;
+  impulse: string;
+  title: string;
+  lines: string[];
+  rules: { id: string; text: string }[];
+}
+
 export interface ScannerScan {
   id: string;
   market: string;
@@ -166,6 +177,8 @@ export interface ScannerScan {
   risk_mult: number | null;
   report_href: string;
   capital: number | null;      // the scan's capital (its quantities were sized on this)
+  market_note: MarketNote | null;   // why the market rule stops (or shrinks) new entries that day
+  score_note: string;               // what the scanner's priority score is made of
   risk_pct: number;            // % of equity risked per trade
   max_alloc_pct: number;       // max % of equity in one position
   signals: ScannerSignal[];
@@ -199,7 +212,9 @@ export interface TodayRow {
   close: number;
   change_pct: number | null;
   volume: number;
-  turnover: number;          // 50-bar median of close x volume
+  turnover: number;          // average daily turnover, last 20 sessions (typical price x volume)
+  turnover_day?: number;     // that session's turnover
+  htq?: boolean;             // HTQ: the 20-day average at its highest of the last quarter
   patterns: string[];
   hits: { pattern: string; text: string; notes: string[] }[];
 }
@@ -218,6 +233,9 @@ export interface PatternsToday {
   tf: string;
   session?: string;           // trading date of the screened bar (YYYY-MM-DD)
   dates: string[];            // sessions with a saved screen, newest first
+  latest_session?: string | null;   // the newest session with data (may not be screened yet)
+  turnover_days?: number;           // turnover = the average of this many sessions (20)
+  htq_days?: number;                // HTQ looks back this many sessions (a quarter, 63)
   as_of: number | null;       // the latest bar (epoch s)
   last_session?: number;
   rows: TodayRow[];

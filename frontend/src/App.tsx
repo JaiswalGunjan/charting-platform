@@ -224,7 +224,7 @@ export default function App() {
         <a className="toolbar-link" href="/?page=screener" target="_blank" rel="noopener"
           title="Opens in a new tab: the patterns formed on a session's daily or weekly bar, every stock">▦ Pattern Screener ↗</a>
         <a className="toolbar-link" href="/?page=setups" target="_blank" rel="noopener"
-          title="Opens in a new tab: the SwingScanner's buy signals by date and market, with entry, stop, quantity and why">▤ Setup Screener ↗</a>
+          title="Opens in a new tab: the SwingScanner's breakouts by date and market, with entry, stop, quantity and why">▤ Setup Screener ↗</a>
         <div className="spacer" />
         <span
           className={`conn ${conn}${health?.simulated_ticks ? " sim" : ""}${health?.ticks === "none" ? " eod" : ""}`}

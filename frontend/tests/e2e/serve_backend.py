@@ -35,7 +35,11 @@ for name, sym, setup, close, stop in (("NSE_daily_2026-11-20", "HDFCBANK", "PP",
     d.mkdir(parents=True)
     (d / "signals.csv").write_text(COLS + f"2026-11-20,{sym},{setup},True,{close},{stop},3.0,below the low,8.5,2,base,5,,,"
                                           "setup today,1,would buy,10,2400,\n")
-    (d / "market.json").write_text('{"valid_today": 1, "market_row": {"regime": "bull", "risk_mult": 1.0}}')
+    if name.startswith("NASDAQ"):        # a day the market rule blocks: impulse (-,-) on the index
+        (d / "market.json").write_text('{"valid_today": 1, "market_row": {"regime": "weak_bear", "impulse": "--", '
+                                       '"risk_mult": 0.0, "idx_close": 2400.5, "idx_wma20": 2410.2, "idx_wma50": 2390.1}}')
+    else:
+        (d / "market.json").write_text('{"valid_today": 1, "market_row": {"regime": "bull", "risk_mult": 1.0}}')
 
 os.environ.update(
     DATABASE_URL=f"sqlite:///{(tmp / 'e2e.db').as_posix()}",

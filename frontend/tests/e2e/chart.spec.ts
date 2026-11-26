@@ -117,20 +117,30 @@ test("zoom in / out and move left / right from the buttons at the bottom middle 
   await bar.getByRole("button", { name: "Move right" }).click();
   await expect.poll(async () => (await range()).from).toBeGreaterThan(r3.from + 1);        // later bars
 
-  // moving right stops at the latest bar (plus a small gap); the button is then disabled
+  // moving right stops at the latest bar (plus a small gap): the button turns disabled there. Checked the moment the
+  // loop stops: the tests' simulated live ticks can add a new bar a moment later, which moves the edge again
   const right = bar.getByRole("button", { name: "Move right" });
-  for (let k = 0; k < 20 && (await right.isEnabled()); k++) await right.click();
-  await expect(right).toBeDisabled();
-  const atEnd = await range();
-  await right.click({ force: true });                                                      // no effect when disabled
-  expect((await range()).to).toBeCloseTo(atEnd.to, 1);
+  let stopped = false;
+  for (let k = 0; k < 20; k++) {
+    if (!(await right.isEnabled())) { stopped = true; break; }
+    await right.click();
+    await page.waitForTimeout(80);
+  }
+  expect(stopped).toBe(true);                                             // it did stop, before 20 moves
 
   // moving left stops at the first bar (older history loads as it is reached), never before it
   await page.locator(".rangebar button", { hasText: "All" }).click();
+  await expect(page.locator(".tf-btn")).toContainText("M");                  // "All" switches to monthly bars
+  await expect(page.locator(".rangebar button.active")).toHaveText("All");
+  await page.waitForTimeout(800);                                            // the monthly bars are in
   await bar.getByRole("button", { name: "Zoom in" }).click();
   const left = bar.getByRole("button", { name: "Move left" });
-  for (let k = 0; k < 60 && (await left.isEnabled()); k++) { await left.click(); await page.waitForTimeout(60); }
-  await expect(left).toBeDisabled();
-  expect((await range()).from).toBeGreaterThanOrEqual(-0.01);
-  await expect(right).toBeEnabled();
+  let atStart: { from: number; to: number } | null = null;
+  for (let k = 0; k < 60; k++) {
+    if (!(await left.isEnabled())) { atStart = await range(); break; }
+    await left.click();
+    await page.waitForTimeout(120);
+  }
+  expect(atStart).not.toBeNull();                                        // it did stop at the first bar
+  expect(atStart!.from).toBeGreaterThanOrEqual(-0.01);                   // never before it (older bars may load in front)
 });

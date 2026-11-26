@@ -62,8 +62,8 @@ un-tests.ps1 -SkipE2E # without the browser tests
 
 | Suite | Where | What it guards |
 |---|---|---|
-| Backend, pytest (247) | `backend/tests/` | data import (daily/hourly/names/CLI), every timeframe incl. US sessions and paging, all 50 indicators vs reference maths, formula language and its sandbox, live bars and WebSocket, alerts, watchlists, AI analyst (fake LLM), drawings API, chart patterns (parity with swingbt when present) |
-| Frontend unit, Vitest (66) | `frontend/tests/unit/` | date-range presets (incl. month-end clamping), time zones and DST, drawing geometry, time<->pixel mapping and hit-testing, indicator labels/styles, number formats |
+| Backend, pytest (288) | `backend/tests/` | data import (daily/hourly/names/CLI), every timeframe incl. US sessions and paging, all 50 indicators vs reference maths, formula language and its sandbox, live bars and WebSocket, alerts, watchlists, AI analyst (fake LLM), drawings API, chart patterns (parity with swingbt when present) |
+| Frontend unit, Vitest (71) | `frontend/tests/unit/` | date-range presets (incl. month-end clamping), time zones and DST, drawing geometry, time<->pixel mapping and hit-testing, indicator labels/styles, number formats |
 | Browser end-to-end, Playwright (24) | `frontend/tests/e2e/` | every user flow in a real browser: load, live ticks, symbol search, timeframe menu, ranges, theme, indicators and settings, custom formulas, drawing tools and saving, pattern menu and counts, alerts |
 
 The end-to-end tests start their own backend on :8010 with a fresh, seeded synthetic database and a dev server
@@ -145,7 +145,8 @@ coil box) and S/R levels. Only hits that pass the rule's hard checks are shown.
 **1 Date** (calendar over the saved sessions; a weekend or holiday shows the session before it), **2 Exchange**
 (NSE, NYSE, NASDAQ) and **3 Timeframe** (daily or weekly); it lists every stock whose bar of that session formed
 one of the rulebook patterns. A stock opens in a Charting Lab tab (`/?symbol=NSE:TCS&tf=1D&patterns=pp`). Pick one
-pattern or several (a stock must have formed **all** of them), set a minimum 50-bar median turnover (₹ Cr / $M) and
+pattern or several (a stock must have formed **all** of them), set a minimum average turnover (₹ Cr / $M: the average of typical price x volume over the last 20 sessions;
+**HTQ** marks a stock whose 20-day average is at its highest of the last quarter, and **HTQ only** keeps just those) and
 search. Clicking a stock opens its chart with those patterns switched on. Results are screened in one pass per exchange
 (bars read in batches; the rules run on the screened bar only: NSE ~45 s daily, ~65 s weekly). Each screen is saved in
 `backend/data/screens/` under its session date (`NSE_1D_2026-11-20.json`; `NSE_1D.json` = the newest) and refreshed
@@ -155,7 +156,8 @@ with **Update screen** or:
     python -m app.cli screen --exchanges NSE --tf 1D --date 2026-11-20            # one past session
     python -m app.cli screen --exchanges NSE,NYSE,NASDAQ --tf "1D,1W" --days 30   # backfill what is missing
 
-Schedule the first after the nightly import. Weekly = the week up to that session (one screen per week in a
+**▶ Run pattern screen** on the page screens the picked date (or the newest session with data) only when it
+has no saved screen; a saved one shows **✓ Screened** and the API refuses it (409). Schedule the first after the nightly import. Weekly = the week up to that session (one screen per week in a
 backfill). API: `GET /screener/patterns-today?exchange&tf[&date]` (with the saved `dates`), `POST .../run`
 (`{exchange, tf, date?}`), `GET .../job`.
 
@@ -172,13 +174,18 @@ the buy signals with entry (the signal day's close), SL and a quantity sized for
 default 10; NYSE/NASDAQ in dollars, default $100,000) and your risk per trade (default 1%), plus near misses (with the hard rule that failed). Each row shows the company name; the symbol is a link to its chart (Entry / SL lines, the setup's pattern on).
 Clicking a row opens its "why this trade" summary right under it (click again to close); it starts with the setup
 itself (the scanner's own `explain.py` text, read as data). A search box (symbol or company) and setup chips filter
-the table.
-Clicking a row opens the chart with Entry/SL lines and the setup's pattern switched on. (The API can still start a
-scan on a running `SwingScanner.exe`, `POST /scanner/run`; the panel has no run button. If a US market's per-symbol
+the table. When the market rule stops new entries (index impulse (-,-), a strong bear regime, or the index
+below its 10-day low) a note above the table says which rule, and sizes are still shown at the full multiplier
+(marked "if allowed"). The bottom of the page lists what the priority score is made of.
+**▶ Run setup scan** (SwingScanner.exe running) scans the picked date or the newest data session only when no scan
+of it is saved (a saved one shows **✓ Scanned**; `POST /scanner/run` refuses it, 409). If a US market's per-symbol
 folder holds only stub files, `GET /scanner` flags it: SwingScanner.exe of 18 Nov 2026 then fails with 'no symbol
 produced bars'; its current source falls back to the day files, so rebuild the bundle.) **full report ↗** opens
 the scanner's HTML report restyled in the app's day/night theme (`/scanner/report/...`; its Watch / Enter trade /
-Refresh buttons are passed to the scanner's server). The app never writes into the scanner's folders. API:
+Refresh buttons are passed to the scanner's server). Saved scans keep their data (signals, near misses, market, report page) but not the scanner's chart pages
+(about 95% of a scan's size; Charting Lab draws its own charts): a scan run from the app has its `charts/` folder
+removed when it finishes, and `python -m app.cli scanner-slim` does the same for scans run elsewhere
+(`SCANNER_KEEP_CHARTS=true` keeps them). Apart from that, the app never writes into the scanner's folders. API:
 `GET /scanner`, `/scanner/scans/{id}`, `/scanner/scans/{id}/explain`, `/scanner/setups`, `/scanner/portfolio`,
 `POST /scanner/run`, `GET /scanner/job`, `GET|POST /scanner/report/...`.
 
@@ -222,3 +229,10 @@ frontend/src/
 
 Frontend by hand: `cd frontend; npm install; npm run dev` (backend must be on :8000);
 `npm run build` type-checks and bundles.
+
+## Wording (SEBI)
+
+The app shows no "buy" / "sell" recommendations: a signal to enter is a **Breakout**, to exit a **Breakdown**, and other
+uses become entry / exit words (e.g. "the entry price", "how the position exits"). Text that comes from the rulebook,
+the SwingScanner or the generated pattern rules is rewritten by `backend/app/wording.py` on its way to the screen
+(API answers and the restyled report); the source files are not changed.

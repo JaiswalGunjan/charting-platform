@@ -57,6 +57,60 @@ def rulebook(scanner_root: Path | None) -> dict[str, str]:
     return _rulebook(str(d), mt)
 
 
+INDEX_NAME = {"NSE": "Nifty SmallCap 250", "BSE": "Nifty SmallCap 250", "NYSE": "Russell 2000", "NASDAQ": "Russell 2000"}
+
+
+def market_note(market: str, mr: dict, rules: dict[str, str]) -> dict | None:
+    """Why the market rule stops (or shrinks) new entries on the scan day, from the scanner's own market row
+    (swingbt/rules/market.py): the 10-day-low warning (S7-R014), the regime (S7-R005..R009) and the impulse
+    (S7-R025/R026)."""
+    if not mr:
+        return None
+    idx = INDEX_NAME.get(market, "the small-cap index")
+    regime = str(mr.get("regime") or "").replace("_", " ")
+    imp = str(mr.get("impulse") or "")
+    mult = _f(mr.get("risk_mult"))
+    close, w20, w50 = _f(mr.get("idx_close")), _f(mr.get("idx_wma20")), _f(mr.get("idx_wma50"))
+    low10 = _f(mr.get("idx_low10_prior"))
+    num = (lambda v: f"{v:,.2f}" if v is not None else "-")
+    lines, ids = [], []
+    if mr.get("warn_10d_low"):
+        lines.append(f"{idx} closed at {num(close)}, below its prior 10-day low {num(low10)}: protective mode, "
+                     "no new entries today.")
+        ids.append("S7-R014")
+    if imp == "--":
+        lines.append(f"Impulse (-,-) on the {idx}: its 13-day EMA and its MACD histogram both ticked down, "
+                     "so no new positions.")
+        ids += ["S7-R025", "S7-R026"]
+    elif imp == "-+":
+        lines.append(f"Impulse (-,+) on the {idx}: the 13-day EMA ticked down while the MACD histogram ticked up, "
+                     "so positions are half size.")
+        ids.append("S7-R025")
+    if regime == "strong bear":
+        lines.append(f"Regime strong bear: the index 20 WMA ({num(w20)}) is below its 50 WMA ({num(w50)}), both falling.")
+        ids.append("S7-R007")
+    elif regime in ("weak bear", "range"):
+        lines.append(f"Regime {regime}: index 20 WMA {num(w20)} vs 50 WMA {num(w50)}, so positions are half size.")
+    blocked = bool(mr.get("warn_10d_low")) or (mult is not None and mult <= 0)
+    if not lines:
+        return None
+    return dict(blocked=blocked, multiplier=mult, index=idx, regime=regime, impulse=imp,
+                title=("Market rule: no new entries today" if blocked else f"Market rule: positions at x{mult:g} size"),
+                lines=lines, rules=[dict(id=i, text=_short(rules[i], 220)) for i in dict.fromkeys(ids) if rules.get(i)])
+
+
+def score_note(folder) -> str:
+    """The scanner's own description of its score, from the scan's report page (its wording is filtered on the way out)."""
+    import html
+    import re
+    try:
+        text = (folder / "index.html").read_text(encoding="utf-8")
+    except OSError:
+        return ""
+    m = re.search(r"Score = [^<]+", text)
+    return html.unescape(m.group(0)).strip() if m else ""
+
+
 def position(equity: float, entry: float, stop: float, risk_pct: float = 1.0, risk_mult: float = 1.0,
              size_mult: float = 1.0, max_alloc_pct: float = 45.0) -> tuple[int, str]:
     """The scanner's sizing (swingbt/rules/sizing.py `shares`, without the cash and turnover caps):
@@ -110,7 +164,7 @@ def explain(row: dict, market: str, setup: dict, rules: dict[str, str], meta: di
         lines.append(f"Other setups on the same bar: {row['also']} (the tightest stop is kept).")
     if not valid and row.get("reject"):
         lines.append("Not a buy - failed: " + "; ".join(_short(x, 110) for x in row["reject"].split(";") if x.strip()))
-    sections.append(dict(title="Why today is the entry" if valid else "Why it is not a buy today", lines=lines))
+    sections.append(dict(title="Why today is the entry" if valid else "Why it is not a breakout today", lines=lines))
 
     # 3. where the stop is and why
     lines = []
@@ -129,7 +183,7 @@ def explain(row: dict, market: str, setup: dict, rules: dict[str, str], meta: di
     sections.append(dict(title="Where the stop is and why", lines=lines))
 
     # 4. how we would sell (the rulebook's exit rules, brief)
-    sections.append(dict(title="How we would sell", lines=[
+    sections.append(dict(title="How the position exits", lines=[
         "Break-even: after +1R (or a new 52-week high) the stop moves up to the buy price (S6A-R012/R020).",
         "Defensive: if the 10 WMA crosses below the 20 WMA before the third extension, the stop goes to that day's "
         "low (S6B-R015).",
@@ -150,6 +204,11 @@ def explain(row: dict, market: str, setup: dict, rules: dict[str, str], meta: di
     mult = 1.0 if mult is None else mult
     size_mult = _f(row.get("size_mult")) or 1.0
     lines = []
+    if mult <= 0 or mr.get("warn_10d_low"):
+        # the market rule blocks new entries today: show the size it would have at the full multiplier
+        lines.append("The market rule blocks new entries today (see the market note); the size below is what it would "
+                     "be at the full market multiplier.")
+        mult = 1.0
     if cap:
         at_risk = cap * risk_pct / 100 * mult * size_mult
         lines.append(f"Portfolio size {money(cap)}, risk {risk_pct:g}% per trade x market multiplier {mult:g}"

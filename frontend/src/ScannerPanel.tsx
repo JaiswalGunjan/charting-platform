@@ -5,7 +5,7 @@ import { dollars, lakhs, positionSize, type Size } from "./sizing";
 
 type View = "buy" | "near";
 const MARKET_ORDER = ["NSE", "BSE", "NYSE", "NASDAQ"];
-const VIEW_LABEL: Record<View, string> = { buy: "Buy signals", near: "Near misses" };
+const VIEW_LABEL: Record<View, string> = { buy: "Breakouts", near: "Near misses" };   // no buy / sell words (SEBI)
 /** The portfolio box per currency: NSE/BSE scans in rupees (typed in lakh), NYSE/NASDAQ scans in dollars. */
 type Cur = "INR" | "USD";
 const CUR: Record<Cur, { unit: number; def: number; key: string; sym: string; word: string; fmt: (v: number) => string }> = {
@@ -26,9 +26,11 @@ export interface ScanOpen { scan: string; symbol: string; setup: string; near: b
 
 /** The saved scan of a market for a date: that session, else the one before it within 4 days (a weekend or holiday);
  * no date = the market's newest scan. `scans` are newest first. */
-export function scanFor<T extends { market: string; date: string }>(scans: T[], market: string, day: string): T | null {
+export function scanFor<T extends { market: string; date: string }>(scans: T[], market: string, day: string,
+                                                                    sessions: string[] = []): T | null {
   const xs = scans.filter((x) => x.market === market);
   if (!day) return xs[0] ?? null;
+  if (sessions.includes(day)) return xs.find((x) => x.date === day) ?? null;
   const at = Date.parse(`${day}T00:00:00Z`);
   return xs.find((x) => x.date <= day && at - Date.parse(`${x.date}T00:00:00Z`) <= 4 * 86_400_000) ?? null;
 }
@@ -78,6 +80,8 @@ export default function ScannerPanel(props: {
     if (v > 0) localStorage.setItem(C.key, String(v));
   };
   const [error, setError] = useState("");
+  const [job, setJob] = useState<{ state: string; line: string; hint?: string } | null>(null);
+  const polling = useRef<number | null>(null);
   const [why, setWhy] = useState<SignalExplanation | null>(null);
   const [setupFilter, setSetupFilter] = useState<string | null>(null);
   const [whyErr, setWhyErr] = useState("");
@@ -85,9 +89,12 @@ export default function ScannerPanel(props: {
   const whyRef = useRef<HTMLDivElement>(null);
 
   /** Quantity and position at the user's equity, with the scanner's sizing rule. */
+  // on a day the market rule blocks new entries, sizes are shown at the full multiplier (marked "if allowed")
+  const blocked = !!scan?.market_note?.blocked;
+  const riskMult = blocked ? 1 : scan?.risk_mult ?? 1;
   const sized = (s: ScannerSignal): Size | null =>
     !scan || !(equity > 0) || !(riskPct > 0) || s.entry == null || s.stop == null || !s.valid ? null : positionSize({
-      equity, entry: s.entry, stop: s.stop, riskPct, riskMult: scan.risk_mult ?? 1,
+      equity, entry: s.entry, stop: s.stop, riskPct, riskMult,
       sizeMult: s.size_mult ?? 1, maxAllocPct: scan.max_alloc_pct ?? 45,
     });
   const withSize = (s: ScannerSignal): ScannerSignal => {
@@ -149,7 +156,8 @@ export default function ScannerPanel(props: {
 
   useEffect(() => void loadStatus(), []); // eslint-disable-line react-hooks/exhaustive-deps
   // the scan of the picked market and date
-  const target = status && mkt ? scanFor(status.scans, mkt, day) : null;
+  const dataDates = status?.markets?.find((m) => m.market === mkt)?.dates ?? [];   // the scanner's sessions, newest first
+  const target = status && mkt ? scanFor(status.scans, mkt, day, dataDates) : null;
   useEffect(() => setScanId(target?.id ?? ""), [target?.id]);
   useEffect(() => {
     if (!scanId) {
@@ -182,14 +190,54 @@ export default function ScannerPanel(props: {
   }, [scan, props.open]); // eslint-disable-line react-hooks/exhaustive-deps
 
 
+  useEffect(() => () => { if (polling.current) window.clearInterval(polling.current); }, []);
+  const run = async () => {
+    if (!status || !mkt) return;
+    const m = mkt;
+    const d = day || status.markets?.find((x) => x.market === m)?.dates?.[0] || "";
+    setError("");
+    try {
+      await api.scannerRun(m, d || undefined);
+      setJob({ state: "running", line: `Scanning ${m} for ${d}…` });
+      let since = 0;
+      polling.current = window.setInterval(async () => {
+        try {
+          const j = await api.scannerJob(since);
+          since = j.next;
+          const line = j.log.length ? j.log[j.log.length - 1] : undefined;
+          setJob((old) => ({ state: j.state, line: line ?? old?.line ?? "", hint: j.hint }));
+          if (j.state !== "running") {
+            window.clearInterval(polling.current!);
+            polling.current = null;
+            if (j.state === "done") {
+              await loadStatus();
+              setDay(d);
+            }
+          }
+        } catch {
+          /* keep following */
+        }
+      }, 1500);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  };
+
   if (!status) return <div className="panel hint">{error || "Connecting to the scanner…"}</div>;
   if (!status.configured) return <div className="panel hint">{status.msg}</div>;
 
   // markets: NSE, NYSE, NASDAQ always (greyed out without scans), BSE when it has scans
   const shownMarkets = MARKET_ORDER.filter((m) => m !== "BSE" || status.scans.some((x) => x.market === m));
   const marketDates = status.scans.filter((x) => x.market === mkt).map((x) => x.date);   // newest first
+  // run only what is not saved: the picked date, or the newest session with data when no scan of it is saved
+  const runDate = day || dataDates[0] || "";
+  const runSaved = !!runDate && status.scans.some((x) => x.id === `${mkt}_daily_${runDate}`);
+  const runnable = !!runDate && dataDates.includes(runDate) && !runSaved;
+  const running = job?.state === "running";
+  const maxDate = [marketDates[0], dataDates[0]].filter(Boolean).sort().pop();
+  const minDate = [marketDates[marketDates.length - 1], dataDates[dataDates.length - 1]].filter(Boolean).sort()[0];
   const byScore = (a: ScannerSignal, b: ScannerSignal) => (b.score ?? -Infinity) - (a.score ?? -Infinity);
-  // buy signals: highest priority score first (signals without a score last)
+  // breakouts: highest priority score first (signals without a score last)
   const viewRows: ScannerSignal[] = !scan ? [] : view === "buy" ? [...scan.signals].sort(byScore) : scan.near_misses;
   const ql = q.trim().toLowerCase();
   const rows = viewRows.filter((r) => (!setupFilter || r.setup === setupFilter) &&
@@ -200,13 +248,13 @@ export default function ScannerPanel(props: {
     return acc;
   }, {})).sort((x, y) => y[1] - x[1] || x[0].localeCompare(y[0]));
   const count = (v: View) => (!scan ? 0 : v === "buy" ? scan.signals.length : scan.near_misses.length);
-  const budget = scan ? equity * (riskPct / 100) * (scan.risk_mult ?? 1) : 0;
+  const budget = scan ? equity * (riskPct / 100) * riskMult : 0;
   const ncols = view === "buy" ? 6 : 5;
 
   return (
     <div className={`panel scanner${props.page ? " page" : ""}`}>
       <div className="panel-head">
-        <span title="Trades from your SwingScanner rulebook: buy signals with entry, stop and quantity">Setup Scanner</span>
+        <span title="Breakouts from your SwingScanner rulebook, with entry, stop and quantity">Setup Scanner</span>
         <span className={`small ${status.online ? "up" : "muted"}`}
           title={status.online ? "SwingScanner.exe is running: new scans can be run from here"
             : "Start SwingScanner.exe to run new scans; past scans are still shown"}>
@@ -217,10 +265,9 @@ export default function ScannerPanel(props: {
       <div className="field scan-pick today-steps">
         <label className="step">
           <span className="step-n">1</span> Date
-          <input type="date" aria-label="Scan date" value={day || marketDates[0] || ""}
-            min={marketDates[marketDates.length - 1]} max={marketDates[0]}
+          <input type="date" aria-label="Scan date" value={day || marketDates[0] || ""} min={minDate} max={maxDate}
             title="The session of the scan; a weekend or holiday shows the scan of the session before it"
-            onChange={(e) => setDay(e.target.value === marketDates[0] ? "" : e.target.value)} />
+            onChange={(e) => setDay(e.target.value)} />
           <button className={`small${day ? "" : " active"}`} onClick={() => setDay("")} title="The newest scan">Latest</button>
           <button className="small" title="Reload the list of saved scans" onClick={() => loadStatus()}>↻</button>
         </label>
@@ -236,10 +283,22 @@ export default function ScannerPanel(props: {
             })}
           </nav>
         </div>
+        <button className={`small run-btn${runnable && status.online ? " primary" : ""}`}
+          disabled={running || !runnable || !status.online} onClick={run}
+          title={runSaved ? `Already scanned for ${niceDate(runDate)}: the saved scan is shown`
+            : !runnable ? "No data for this date in the scanner's folder"
+            : !status.online ? "Start SwingScanner.exe to run a scan"
+            : `Scan ${mkt} for ${niceDate(runDate)} and save it`}>
+          {running ? "Scanning…" : runSaved || (!runnable && !!target) ? "✓ Scanned" : `▶ Run setup scan${runDate ? ` · ${niceDate(runDate)}` : ""}`}
+        </button>
       </div>
+      {job && <div className={`hint scan-log${job.state === "error" ? " error" : ""}`}>{job.line}</div>}
+      {job?.state === "error" && job.hint && <div className="hint scan-hint">{job.hint}</div>}
       {mkt && !target && (
-        <div className="hint scan-missing">No {mkt} scan is saved for {niceDate(day)}. Pick another date, or <button
-          className="link" onClick={() => setDay("")}>the latest scan</button>.</div>
+        <div className="hint scan-missing">No {mkt} scan is saved for {niceDate(day || runDate)}.{" "}
+          {runnable ? (status.online ? "Run it with the button above, or pick another date." : "Start SwingScanner.exe to run it, or pick another date.")
+            : "Pick another date, or "}
+          {!runnable && <button className="link" onClick={() => setDay("")}>the latest scan</button>}{!runnable && "."}</div>
       )}
       {target && day && target.date !== day && (
         <div className="hint small">{niceDate(day)} was not a session: showing the scan of {niceDate(target.date)}.</div>
@@ -291,10 +350,25 @@ export default function ScannerPanel(props: {
             </div>
             {equity > 0 && riskPct > 0 && (
               <span className="muted small">
-                At risk per trade {money(budget)} = {riskPct}% x market multiplier {scan.risk_mult ?? 1}; max {scan.max_alloc_pct ?? 45}% of the portfolio in one stock.
+                At risk per trade {money(budget)} = {riskPct}% x market multiplier {riskMult}
+                {blocked && " (the market rule blocks new entries today: sizes are shown at the full multiplier)"};
+                max {scan.max_alloc_pct ?? 45}% of the portfolio in one stock.
               </span>
             )}
           </div>
+
+          {scan.market_note && (
+            <div className={`market-note${scan.market_note.blocked ? " blocked" : ""}`} role="note">
+              <b>{scan.market_note.title}</b>
+              <ul>{scan.market_note.lines.map((l, k) => <li key={k}>{l}</li>)}</ul>
+              {scan.market_note.rules.length > 0 && (
+                <details>
+                  <summary>Rules {scan.market_note.rules.map((r) => r.id).join(", ")}</summary>
+                  <ul>{scan.market_note.rules.map((r) => <li key={r.id}><b>{r.id}</b> {r.text}</li>)}</ul>
+                </details>
+              )}
+            </div>
+          )}
 
           <nav className="tabs inline seg scan-views">
             {(Object.keys(VIEW_LABEL) as View[]).map((v) => (
@@ -333,7 +407,7 @@ export default function ScannerPanel(props: {
                 <th>Symbol · setup</th>
                 <th title="Entry = the signal day's close">Entry</th>
                 <th title="Stop loss (and its distance below the entry)">SL</th>
-                <th title="The scanner's priority score: higher = bought first (sorted highest first)">Score ▼</th>
+                <th title="The scanner's priority score: higher = ranked first (sorted highest first)">Score ▼</th>
                 {view === "buy" && <th title="Quantity at your equity, and the position's share of it">Qty</th>}
               </tr>
             </thead>
@@ -359,7 +433,11 @@ export default function ScannerPanel(props: {
                   {view === "buy" && (
                     <td>
                       {z ? (
-                        <>{z.shares.toLocaleString("en-IN")}<div className="muted small">{money(z.value)} · {z.pctOfEquity.toFixed(1)}%</div></>
+                        <>
+                          {z.shares.toLocaleString("en-IN")}
+                          <div className="muted small">{money(z.value)} · {z.pctOfEquity.toFixed(1)}%</div>
+                          {blocked && <div className="qty-blocked small" title="The market rule blocks new entries today">if allowed</div>}
+                        </>
                       ) : "—"}
                     </td>
                   )}
@@ -372,7 +450,7 @@ export default function ScannerPanel(props: {
                       {why && (
                         <div className="why" ref={whyRef}>
                           <div className="panel-head">
-                            <span>{view === "near" ? "Why it is not a trade" : "Why this trade"}: {why.symbol.split(":")[1]} · {why.setup} · {why.date}</span>
+                            <span>{view === "near" ? "Why it is not a breakout" : "Why this breakout"}: {why.symbol.split(":")[1]} · {why.setup} · {why.date}</span>
                             <button className="icon" title="Close" onClick={(e) => { e.stopPropagation(); setPicked(null); setWhy(null); }}>✕</button>
                           </div>
                           <ol>
@@ -392,16 +470,42 @@ export default function ScannerPanel(props: {
               ); })}
               {!rows.length && (
                 <tr><td colSpan={ncols} className="muted">
-                  {ql ? `No ${view === "buy" ? "buy signal" : "near miss"} matches "${q.trim()}".`
-                    : view === "buy" ? "No buy signals in this scan." : "No near misses."}
+                  {ql ? `No ${view === "buy" ? "breakout" : "near miss"} matches "${q.trim()}".`
+                    : view === "buy" ? "No breakouts in this scan." : "No near misses."}
                 </td></tr>
               )}
             </tbody>
           </table>
 
 
+          {scan.score_note && <ScoreNote text={scan.score_note} />}
         </>
       )}
+    </div>
+  );
+}
+
+/** The attributes the score covers, from the scanner's own description: names only (no weights, no source file). */
+export function scoreAttributes(text: string): string[] {
+  const body = text.replace(/^Score = /, "");
+  const colon = body.indexOf(": ");
+  const rest = colon > 0 ? body.slice(colon + 2) : body;
+  const dot = rest.search(/\.\s/);
+  const formula = dot > 0 ? rest.slice(0, dot) : rest;
+  const [plus, minus] = formula.split(/,\s*minus\s+/);
+  const clean = (x: string) => x.replace(/\s*\([^)]*\)/g, "").replace(/\s*x\s*[\d.]+/g, "").trim();
+  const out = plus.split(/ \+ (?![^()]*\))/).map(clean).filter(Boolean);
+  if (minus) out.push(`${clean(minus.replace(/^.*?\bper\s+/, "")).replace(/miss$/, "misses")} (lower the score)`);
+  return out.map((x) => x.charAt(0).toUpperCase() + x.slice(1));
+}
+
+/** "What we consider to calculate score": the attributes the score covers. */
+function ScoreNote({ text }: { text: string }) {
+  const attrs = scoreAttributes(text);
+  return (
+    <div className="score-note">
+      <b>What we consider to calculate score</b>
+      <ul>{attrs.map((x) => <li key={x}>{x}</li>)}</ul>
     </div>
   );
 }

@@ -442,3 +442,25 @@ a.brand { text-decoration: none; }
 .scan-table tr.why-row { cursor: default; }
 .scan-table tr.why-row > td { padding: 0 6px 10px; background: var(--panel-2); text-align: left; white-space: normal; }
 .scan-table tr.why-row .why { margin: 0; border-top: 0; }
+
+/* run buttons (pattern screen, setup scan): solid when there is something to run, quiet "✓ Screened / Scanned" otherwise */
+.run-btn { white-space: nowrap; font-weight: 600; }
+.run-btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.run-btn:disabled { opacity: .7; cursor: default; }
+
+/* Setup Screener: the market-rule note above the table, "if allowed" sizes, the score explanation at the bottom */
+.market-note { margin: 8px 0; padding: 8px 12px; border: 1px solid var(--border); border-left: 4px solid var(--warn);
+  border-radius: 6px; background: var(--panel); font-size: 12.5px; }
+.market-note.blocked { border-left-color: var(--down); }
+.market-note ul { margin: 4px 0 2px; padding-left: 18px; }
+.market-note details { margin-top: 4px; }
+.market-note summary { cursor: pointer; color: var(--accent); font-size: 12px; }
+.market-note details li { color: var(--muted); }
+.qty-blocked { color: var(--down); font-weight: 600; }
+.score-note { margin: 18px 0 6px; padding: 10px 12px; border-top: 1px solid var(--border); font-size: 12.5px; }
+.score-note ul { margin: 6px 0; padding-left: 18px; columns: 2; column-gap: 28px; }
+.score-note li { break-inside: avoid; margin-bottom: 2px; }
+
+/* Pattern Screener: HTQ (highest turnover in a quarter) */
+.htq { display: inline-block; margin-left: 6px; padding: 0 5px; border-radius: 4px; font-size: 10px; font-weight: 700;
+  line-height: 16px; background: #0b7a4b; color: #fff; vertical-align: 1px; }

@@ -90,7 +90,8 @@ def _read(p: Path) -> dict | None:
         return None
 
 
-def _exact(exchange: str, tf: str, root: Path | None, day: str) -> dict | None:
+def saved_screen(exchange: str, tf: str, day: str, root: Path | None = None) -> dict | None:
+    """The screen saved for exactly this session, or None."""
     res = _read(screen_path(exchange, tf, root, day))
     if res is None:                           # the newest screen may be that session (saved before dated files)
         res = _read(screen_path(exchange, tf, root))
@@ -105,7 +106,7 @@ def load_screen(exchange: str, tf: str, root: Path | None = None, day: str | Non
     daily."""
     if not day:
         return _read(screen_path(exchange, tf, root))
-    res = _exact(exchange, tf, root, day)
+    res = saved_screen(exchange, tf, day, root)
     if res is not None:
         return res
     asked = date.fromisoformat(day)
@@ -114,7 +115,7 @@ def load_screen(exchange: str, tf: str, root: Path | None = None, day: str | Non
         if got > asked:
             continue
         near = got.isocalendar()[:2] == asked.isocalendar()[:2] if tf == "1W" else (asked - got).days <= 4
-        return _exact(exchange, tf, root, d) if near else None
+        return saved_screen(exchange, tf, d, root) if near else None
     return None
 
 
@@ -127,6 +128,16 @@ def screen_dates(exchange: str, tf: str, root: Path | None = None) -> list[str]:
     if latest and latest.get("last_session"):
         out.add(session_date(latest["last_session"]))
     return sorted(out, reverse=True)
+
+
+def resolve_session(session_factory: sessionmaker, exchange: str, day: str | None = None) -> str | None:
+    """The trading date a screen of `day` would use: the last session on or before it (default: the latest)."""
+    with session_factory() as s:
+        cond = [Candle.tf == "1D", Candle.symbol_id.in_(select(Symbol.id).where(Symbol.exchange == exchange.upper()))]
+        if day:
+            cond.append(Candle.ts <= session_ts(day))
+        ts = s.scalar(select(func.max(Candle.ts)).where(*cond))
+    return session_date(ts) if ts is not None else None
 
 
 def sessions(session_factory: sessionmaker, exchange: str, since: str) -> list[str]:
@@ -197,6 +208,7 @@ def run_screen(session_factory: sessionmaker, exchange: str, tf: str, root: Path
                 o, h, l, c, v = (arr[a:z, j] for j in range(2, 7))  # noqa: E741
                 if t[-1] != last_day:
                     continue                                   # stale symbol: not traded on the latest session
+                dh, dl, dc, dv = h, l, c, v                    # turnover is measured on daily bars
                 if tf != "1D":
                     t, o, h, l, c, v = resample(TIMEFRAMES[tf], t, o, h, l, c, v, market=market)  # noqa: E741
                 if len(t) < MIN_BARS:
@@ -210,12 +222,12 @@ def run_screen(session_factory: sessionmaker, exchange: str, tf: str, root: Path
                 if not hits:
                     continue
                 tk, name, typ = info[sid]
-                vals = (c[-50:] * v[-50:])[np.isfinite(c[-50:] * v[-50:])]
+                _, tavg = turnover_series(dh, dl, dc, dv)       # 20-day average daily turnover (daily bars)
                 rows.append(dict(
                     symbol=f"{exchange}:{tk}", ticker=tk, name=name, type=typ,
                     close=round(float(c[-1]), 4),
                     change_pct=round(float((c[-1] / c[-2] - 1) * 100), 2) if len(c) > 1 and c[-2] else None,
-                    volume=float(v[-1]), turnover=round(float(np.median(vals)), 0) if len(vals) else 0.0,
+                    volume=float(v[-1]), turnover=round(float(tavg[-1]), 0) if np.isfinite(tavg[-1]) else 0.0,
                     patterns=sorted({m["pattern"] for m in hits}),
                     hits=[dict(pattern=m["pattern"], text=m["text"], notes=m["notes"][:2]) for m in hits]))
         pr.done = min(pr.total, k + len(chunk))
@@ -232,7 +244,16 @@ def run_screen(session_factory: sessionmaker, exchange: str, tf: str, root: Path
 
 def _save(res: dict, exchange: str, tf: str, root: Path | None, newest: bool) -> dict:
     """Saved under its session date; the newest session is also the dashboard's default screen."""
-    paths = ([screen_path(exchange, tf, root, res["session"])] if res.get("session") else []) +         ([screen_path(exchange, tf, root)] if newest else [])
+    if newest:
+        # the screen being replaced as the newest keeps its own dated file (older screens were saved only there)
+        old = _read(screen_path(exchange, tf, root))
+        if old and old.get("last_session") and old.get("last_session") != res.get("last_session"):
+            keep = screen_path(exchange, tf, root, session_date(old["last_session"]))
+            if not keep.exists():
+                keep.parent.mkdir(parents=True, exist_ok=True)
+                keep.write_text(json.dumps(dict(old, session=session_date(old["last_session"]))), encoding="utf-8")
+    paths = ([screen_path(exchange, tf, root, res["session"])] if res.get("session") else []) + \
+        ([screen_path(exchange, tf, root)] if newest else [])
     for p in paths:
         p.parent.mkdir(parents=True, exist_ok=True)
         tmp = p.with_suffix(".tmp")
@@ -240,6 +261,68 @@ def _save(res: dict, exchange: str, tf: str, root: Path | None, newest: bool) ->
         tmp.replace(p)
     log.info("screen %s %s: %d symbols with patterns of %d scanned", exchange, tf, len(res["rows"]), res["scanned"])
     return res
+
+
+TURNOVER_DAYS = 20        # average daily turnover over the last 20 sessions
+QUARTER_DAYS = 63         # HTQ: the 20-day average at its highest of the last ~quarter
+
+
+def turnover_series(h, l, c, v):  # noqa: E741
+    """Daily turnover at the day's typical price ((H + L + C) / 3, the daily stand-in for VWAP) x volume, and its
+    20-session moving average."""
+    daily = (np.asarray(h, float) + np.asarray(l, float) + np.asarray(c, float)) / 3 * np.asarray(v, float)
+    daily = np.where(np.isfinite(daily), daily, 0.0)
+    avg = np.full(len(daily), np.nan)
+    if len(daily) >= TURNOVER_DAYS:
+        k = np.cumsum(np.r_[0.0, daily])
+        avg[TURNOVER_DAYS - 1:] = (k[TURNOVER_DAYS:] - k[:-TURNOVER_DAYS]) / TURNOVER_DAYS
+    return daily, avg
+
+
+def turnover_figures(session_factory: sessionmaker, exchange: str, tickers: list[str], last_ts: int) -> dict[str, dict]:
+    """Per ticker, on the session `last_ts`: the 20-day average daily turnover, that day's turnover, and HTQ (the
+    average at its highest of the last quarter: money flowing in). Read from the daily bars, so every saved screen
+    shows the same definition."""
+    if not tickers:
+        return {}
+    since = int(last_ts) - (TURNOVER_DAYS + QUARTER_DAYS) * 2 * DAY          # calendar days enough for ~85 sessions
+    out: dict[str, dict] = {}
+    with session_factory() as s:
+        ids = dict(s.execute(select(Symbol.id, Symbol.ticker).where(
+            Symbol.exchange == exchange.upper(), Symbol.ticker.in_(tickers))).all())
+        if not ids:
+            return {}
+        data = s.execute(select(Candle.symbol_id, Candle.ts, Candle.h, Candle.l, Candle.c, Candle.v)
+                         .where(Candle.tf == "1D", Candle.symbol_id.in_(list(ids)), Candle.ts >= since,
+                                Candle.ts <= int(last_ts))
+                         .order_by(Candle.symbol_id, Candle.ts)).all()
+    if not data:
+        return {}
+    arr = np.array(data, dtype=float)
+    sid = arr[:, 0].astype(np.int64)
+    cuts = np.flatnonzero(np.r_[True, sid[1:] != sid[:-1], True])
+    for a, z in zip(cuts[:-1], cuts[1:]):
+        daily, avg = turnover_series(arr[a:z, 2], arr[a:z, 3], arr[a:z, 4], arr[a:z, 5])
+        if not len(daily):
+            continue
+        last = avg[-1] if np.isfinite(avg[-1]) else float(np.mean(daily))
+        window = avg[-QUARTER_DAYS:]
+        window = window[np.isfinite(window)]
+        htq = bool(len(window) >= QUARTER_DAYS // 2 and last >= window.max() - 1e-9)
+        out[ids[int(sid[a])]] = dict(turnover=round(float(last), 0), turnover_day=round(float(daily[-1]), 0), htq=htq)
+    return out
+
+
+def with_turnover(session_factory: sessionmaker, res: dict) -> dict:
+    """A saved screen with every row's turnover figures (computed now, from the daily bars up to its session)."""
+    rows = res.get("rows") or []
+    if not rows or not res.get("last_session"):
+        return res
+    figs = turnover_figures(session_factory, res.get("exchange", ""), [r.get("ticker", "") for r in rows],
+                            res["last_session"])
+    return dict(res, rows=[dict(r, **figs.get(r.get("ticker", ""), {})) for r in rows],
+                turnover_basis=f"{TURNOVER_DAYS}-day average of typical price x volume",
+                turnover_days=TURNOVER_DAYS, htq_days=QUARTER_DAYS)
 
 
 def exchanges(session: Session) -> list[str]:

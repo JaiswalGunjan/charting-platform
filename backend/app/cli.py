@@ -109,6 +109,18 @@ def cmd_import_eod(args: argparse.Namespace) -> None:
                       f"from {r.files:,} files in {r.seconds}s")
 
 
+def cmd_scanner_slim(args: argparse.Namespace) -> None:
+    """Remove the charts/ folder of every saved scan (Charting Lab draws its own charts)."""
+    from app.api.scanner import scanner_dir, slim_scans
+
+    root = scanner_dir()
+    if root is None:
+        print("SCANNER_DIR is not set")
+        return
+    n, freed = slim_scans(root)
+    print(f"removed the chart pages of {n} scans, {freed / 1e6:,.0f} MB freed")
+
+
 def cmd_screen(args: argparse.Namespace) -> None:
     """'Patterns formed today' for the dashboard (schedule it after the nightly data import)."""
     from app.patterns.screener import backfill_days, run_screen, screen_dates
@@ -178,6 +190,8 @@ def main(argv: list[str] | None = None) -> None:
     ie.add_argument("--exchanges", default="", help="e.g. NSE or NSE,BSE,NASDAQ,NYSE (default: EOD_EXCHANGES)")
     ie.add_argument("--refresh-names", action="store_true", help="re-download the public listing files")
     ie.set_defaults(fn=cmd_import_eod)
+    sl = sub.add_parser("scanner-slim", help="remove the chart pages from saved SwingScanner scans (keeps their data)")
+    sl.set_defaults(fn=cmd_scanner_slim)
     sc = sub.add_parser("screen", help="patterns formed on the latest bar, for the dashboard")
     sc.add_argument("--exchanges", default="", help="default: EOD_EXCHANGES")
     sc.add_argument("--tf", default="1D,1W", help="1D, 1W or 1D,1W")

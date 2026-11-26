@@ -21,6 +21,9 @@ class Settings(BaseSettings):
     eod_dir: str = ""                  # path to a market_data_daily folder
     scanner_dir: str = ""              # SwingScanner folder (has SwingScanner.exe, swingbt_config.ini, scans/)
     scanner_url: str = "http://127.0.0.1:8765"  # the scanner's local server, when it is running
+    # the scanner writes a chart page per signal (most of a scan's size); Charting Lab draws its own charts, so a finished
+    # scan's charts/ folder is removed (owner's choice, 26 Nov 2026). True keeps them.
+    scanner_keep_charts: bool = False
     screens_dir: str = ""              # saved "patterns formed today" screens (default backend/data/screens)
     scanner_src: str = ""              # TranscriptExtract folder (setup explanations); found from scanner_dir if empty
     eod_hourly_dir: str = ""           # path to a market_data_hourly folder (optional)

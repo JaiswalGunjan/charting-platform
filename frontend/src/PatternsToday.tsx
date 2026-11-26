@@ -31,7 +31,7 @@ const COLS: { key: SortKey; label: string; title: string; first: 1 | -1 }[] = [
   { key: "name", label: "Company", title: "Sort by company name", first: 1 },
   { key: "close", label: "Close", title: "Sort by the latest close", first: -1 },
   { key: "change_pct", label: "Chg %", title: "Sort by the latest change in %", first: -1 },
-  { key: "turnover", label: "Turnover", title: "Sort by the 50-bar median turnover", first: -1 },
+  { key: "turnover", label: "Avg turnover", title: "", first: -1 },   // label and tooltip get the number of days
   { key: "patterns", label: "Patterns on the latest bar", title: "Sort by how many patterns formed", first: -1 },
 ];
 
@@ -47,6 +47,7 @@ export default function PatternsToday(props: {
   const [tf, setTf] = usePersisted<"1D" | "1W">("today.tf", "1D");
   const [selected, setSelected] = usePersisted<string[]>("today.patterns", []);
   const [minTurnover, setMinTurnover] = usePersisted<number>("today.minTurnover", 1);  // crore (India) / $M (US)
+  const [htqOnly, setHtqOnly] = usePersisted<boolean>("today.htqOnly", false);       // HTQ: turnover at a quarter high
   const [sort, setSort] = usePersisted<Sort>("today.sort", { key: "patterns", dir: -1 });
   const [q, setQ] = useState("");
   const [session, setSession] = useState("");            // "" = the newest saved screen
@@ -94,7 +95,7 @@ export default function PatternsToday(props: {
   const run = async () => {
     setError("");
     try {
-      const r = await api.runPatternsToday(exchange, tf, session);
+      const r = await api.runPatternsToday(exchange, tf, runDate);
       setJob(r.job);
       follow();
     } catch (e) {
@@ -102,7 +103,7 @@ export default function PatternsToday(props: {
     }
   };
 
-  const liquid = liquidRows(screen?.rows ?? [], minTurnover, exchange);
+  const liquid = liquidRows(screen?.rows ?? [], minTurnover, exchange).filter((r) => !htqOnly || r.htq);
   const sel = new Set(selected.filter((id) => metaById[id]));
   // AND: a stock must have formed every selected pattern on its latest bar
   const rows = sortRows(matchRows(liquid, sel, q), sort);
@@ -113,6 +114,14 @@ export default function PatternsToday(props: {
   const toggle = (id: string) => setSelected(sel.has(id) ? selected.filter((x) => x !== id) : [...selected, id]);
   const running = job?.state === "running" || screen?.job.state === "running";
   const dates = screen?.dates ?? [];
+  const tDays = screen?.turnover_days ?? 20;
+  const qDays = screen?.htq_days ?? 63;
+  const turnoverTip = `Average daily turnover of the last ${tDays} sessions: typical price (high + low + close) / 3 x volume, ` +
+    `in ${US.has(exchange) ? "$ millions" : "₹ crore"}. HTQ = that average is at its highest of the last ${qDays} sessions (money flowing in).`;
+  const latest = screen?.latest_session ?? dates[0];
+  // run only what is not saved yet: the picked date, or the newest session with data when it is newer than the screen
+  const runDate = session || latest || "";
+  const canRun = !!screen && (screen.missing || (!session && !!latest && !!screen.session && screen.session < latest));
   const sortBy = (c: (typeof COLS)[number]) => setSort(nextSort(sort, c.key, c.first));
 
   return (
@@ -120,10 +129,10 @@ export default function PatternsToday(props: {
       <div className="today-head today-steps">
         <label className="step">
           <span className="step-n">1</span> Date
-          <input type="date" aria-label="Session date" value={session || dates[0] || ""}
-            min={dates[dates.length - 1]} max={dates[0]}
+          <input type="date" aria-label="Session date" value={session || screen?.session || dates[0] || ""}
+            max={latest}
             title="The session whose bar is screened; a weekend or holiday shows the session before it"
-            onChange={(e) => setSession(e.target.value === dates[0] ? "" : e.target.value)} />
+            onChange={(e) => setSession(e.target.value)} />
           <button className={`small${session ? "" : " active"}`} onClick={() => setSession("")}
             title="The latest session">Latest</button>
         </label>
@@ -145,9 +154,10 @@ export default function PatternsToday(props: {
           </nav>
         </div>
         <span className="spacer" />
-        <button className="small" disabled={running} onClick={run}
-          title="Screen every stock again and save the result (about a minute). Opening this page never re-screens.">
-          {running ? "Screening…" : screen?.missing ? `Screen ${exchange} now` : session ? `↻ Re-screen ${niceDay(screen?.session ?? session)}` : "↻ Update screen"}
+        <button className={`small run-btn${canRun ? " primary" : ""}`} disabled={running || !canRun} onClick={run}
+          title={canRun ? `Screen every ${exchange} stock for ${runDate ? niceDay(runDate) : "the latest session"} and save it (about a minute)`
+            : `Already screened for ${screen?.session ? niceDay(screen.session) : "this date"}: the saved screen is shown`}>
+          {running ? "Screening…" : canRun ? `▶ Run pattern screen${runDate ? ` · ${niceDay(runDate)}` : ""}` : "✓ Screened"}
         </button>
       </div>
       <div className="today-status">
@@ -168,7 +178,7 @@ export default function PatternsToday(props: {
       {screen?.missing && !running && (
         <div className="today-empty">
           <p>{exchange} {tf === "1D" ? "daily" : "weekly"}{session ? ` for ${niceDay(session)}` : ""} has not been screened yet.</p>
-          <button className="primary" onClick={run}>Screen {exchange} now</button>
+          <button className="primary" onClick={run} disabled={running}>▶ Run pattern screen</button>
           <p className="muted small">The result is saved; this page shows it until you update it.
             You can also run <code>python -m app.cli screen</code> after each data import.</p>
         </div>
@@ -221,10 +231,14 @@ export default function PatternsToday(props: {
           </div>
 
           <div className="row today-row2">
-            <label className="mini">Min turnover
+            <label className="mini" title={turnoverTip}>Min avg turnover ({tDays})
               <input type="number" min={0} step="any" value={minTurnover}
                 onChange={(e) => setMinTurnover(Math.max(0, Number(e.target.value) || 0))} />
               {US.has(exchange) ? "$M" : "₹ Cr"}
+            </label>
+            <label className="mini" title={`Only stocks whose ${tDays}-day average turnover is at its highest of the last ${qDays} sessions (money flowing in)`}>
+              <input type="checkbox" checked={htqOnly} onChange={(e) => setHtqOnly(e.target.checked)} aria-label="HTQ only" />
+              HTQ only
             </label>
             <input className="grow" placeholder="Search symbol or company" value={q} onChange={(e) => setQ(e.target.value)} />
             <b className="today-count">{rows.length.toLocaleString()} stock{rows.length === 1 ? "" : "s"}</b>
@@ -234,9 +248,10 @@ export default function PatternsToday(props: {
             <thead>
               <tr>
                 {COLS.map((c) => (
-                  <th key={c.key} className={`sortable${sort.key === c.key ? " sorted" : ""}`} title={c.title}
+                  <th key={c.key} className={`sortable${sort.key === c.key ? " sorted" : ""}`}
+                    title={c.key === "turnover" ? turnoverTip : c.title}
                     onClick={() => sortBy(c)} aria-sort={sort.key === c.key ? (sort.dir === 1 ? "ascending" : "descending") : "none"}>
-                    {c.label} <span className="sort-arrow">{sort.key === c.key ? (sort.dir === 1 ? "▲" : "▼") : "↕"}</span>
+                    {c.key === "turnover" ? `Avg turnover (${tDays})` : c.label} <span className="sort-arrow">{sort.key === c.key ? (sort.dir === 1 ? "▲" : "▼") : "↕"}</span>
                   </th>
                 ))}
               </tr>
@@ -250,7 +265,11 @@ export default function PatternsToday(props: {
                   <td className={(r.change_pct ?? 0) >= 0 ? "up" : "down"}>
                     {r.change_pct != null ? `${r.change_pct >= 0 ? "+" : ""}${r.change_pct.toFixed(2)}%` : ""}
                   </td>
-                  <td>{turnoverText(r.turnover, exchange)}</td>
+                  <td title={`Average of the last ${tDays} sessions: ${turnoverText(r.turnover, exchange)}` +
+                    (r.turnover_day != null ? `\nThat day: ${turnoverText(r.turnover_day, exchange)}` : "")}>
+                    {turnoverText(r.turnover, exchange)}
+                    {r.htq && <span className="htq" title={`Highest turnover in a quarter: the ${tDays}-day average is at its highest of the last ${qDays} sessions (money flowing in)`}>HTQ</span>}
+                  </td>
                   <td className="today-pats">
                     <span className="pcount" title="Patterns formed on the latest bar">{r.patterns.length}</span>
                     {r.hits.map((h) => (
@@ -266,7 +285,7 @@ export default function PatternsToday(props: {
               {!rows.length && (
                 <tr><td colSpan={6} className="muted">
                   No stock formed {sel.size > 1 ? "all the selected patterns together" : "the selected pattern"}
-                  {minTurnover ? ` with turnover above ${minTurnover} ${US.has(exchange) ? "$M" : "₹ Cr"}` : ""}.
+                  {minTurnover ? ` with average turnover (${tDays}) above ${minTurnover} ${US.has(exchange) ? "$M" : "₹ Cr"}` : ""}.
                 </td></tr>
               )}
             </tbody>

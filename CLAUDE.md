@@ -43,7 +43,7 @@ Lightweight Charts + FastAPI + PostgreSQL/TimescaleDB + Redis + Kite Connect:
 6. First AI feature: "explain this chart" from OHLCV + indicator context.
 
 ## Implementation status (24 Nov 2026)
-Milestones M1–M12 are built: backend (`backend/`, 247 pytest tests; 66 Vitest + 24 Playwright tests in `frontend/tests`) and frontend (`frontend/`,
+Milestones M1–M12 are built: backend (`backend/`, 288 pytest tests; 71 Vitest + 24 Playwright tests in `frontend/tests`) and frontend (`frontend/`,
 React 19 + Vite 7 + lightweight-charts 5.3, v5 `addSeries(XSeries, opts, paneIndex)` API).
 `run-demo.ps1` starts everything. See README.md for the milestone table and API overview.
 Node is a portable copy in `.tools/node` (gitignored); put it on PATH before running npm.
@@ -67,6 +67,8 @@ near_misses.csv, market.json, portfolio.json) and proxies run/job to its local s
 It flags US data that holds only stubs (`data_warnings`): SwingScanner.exe of 18 Nov fails on it; the source does not.
 Its HTML report is served restyled in our theme by `app/api/scanner_report.py` (theme in `app/static/scanner_report.*`,
 files read, never written; the report's own /api actions are passed to the scanner's server).
+Scans keep no chart pages: `drop_charts` removes `<scan>/charts` after an app-run scan and `app.cli scanner-slim`
+for all (owner's choice, 26 Nov 2026; the only thing the app deletes in the scanner's folder).
 Prototype-stage choices, all cheap to reverse: SQLite default via `DATABASE_URL` (Postgres/
 Timescale ready), in-memory live store unless `REDIS_URL`, single local user (`user_id=1`,
 no auth yet), JSON over WebSocket (binary frames later), live pipeline in Python (Go later).
@@ -85,6 +87,10 @@ owner 24 Nov 2026 over a no-code composer). Its syntax is still open to redesign
 an e2e flow for anything user-visible). CI: `.github/workflows/ci.yml`.
 
 ## Working preferences
+- No "buy" / "sell" wording anywhere on screen (SEBI: no buy/sell recommendations; owner's rule, 25 Nov 2026).
+  A signal to enter is a **Breakout**, to exit a **Breakdown**; other uses become entry / exit words. Text from the
+  rulebook, the SwingScanner and the generated pattern rules goes through `app/wording.py` (`neutral`, `neutral_all`,
+  `neutral_html`) on its way out; their files are never edited. `tests/test_m18_wording.py` sweeps every text answer.
 - The owner is an experienced AI architect (LangGraph, Langfuse, A2A, RAG); skip
   basic explanations of those.
 - Keep secrets (Kite API key/secret, data-vendor keys) in `.env`, never committed.

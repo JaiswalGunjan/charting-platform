@@ -23,7 +23,7 @@ def test_explain_a_signal_in_six_parts(client, scan_root):  # noqa: F811
     e = r.json()
     titles = [s["title"] for s in e["sections"]]
     assert titles == ["What the pattern is: Bad break recovery", "Why today is the entry", "Where the stop is and why",
-                      "How we would sell", "Position size", "Warnings and context"]
+                      "How the position exits", "Position size", "Warnings and context"]
     text = {s["title"]: " ".join(s["lines"]) for s in e["sections"]}
     assert "Rule passed S4-R033: Bad break recovery (BBR)" in text["Why today is the entry"]   # rule text looked up
     stop = text["Where the stop is and why"]
@@ -34,7 +34,7 @@ def test_explain_a_signal_in_six_parts(client, scan_root):  # noqa: F811
 
     near = client.get("/scanner/scans/NSE_daily_2026-11-23/explain",
                       params=dict(symbol="PRESTIGE", setup="VCP", near=True)).json()
-    assert near["valid"] is False and near["sections"][1]["title"] == "Why it is not a buy today"
+    assert near["valid"] is False and near["sections"][1]["title"] == "Why it is not a breakout today"
     assert "failed: S8-R003" in near["sections"][1]["lines"][-1]
     assert "No position" in " ".join(near["sections"][4]["lines"])
     assert client.get("/scanner/scans/NSE_daily_2026-11-23/explain",

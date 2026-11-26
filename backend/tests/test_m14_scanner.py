@@ -61,7 +61,7 @@ def test_scan_detail_ranks_signals_and_maps_setups_to_patterns(client, scan_root
     assert [r["ticker"] for r in d["signals"]] == ["MARICO", "DCBBANK", "ABC"]     # by rank, unranked last
     top = d["signals"][0]
     assert top["symbol"] == "NSE:MARICO" and top["pattern"] == "bbr" and top["valid"] is True
-    assert top["stop"] == 891.91 and top["stop_pct"] == 3 and top["status"] == "would buy" and top["rank"] == 1
+    assert top["stop"] == 891.91 and top["stop_pct"] == 3 and top["status"] == "breakout" and top["rank"] == 1   # "would buy" on screen as "breakout"
     assert top["chart_href"].endswith("/NSE_daily_2026-11-23/charts/MARICO_BBR_2026-11-23.html")
     assert d["signals"][2]["pattern"] == ""                                           # unknown setup: no pattern
     assert top["entry"] == 919.5 and top["risk"] == pytest.approx(27.59) and top["buy"] is True
@@ -108,9 +108,11 @@ def test_run_and_job_go_to_the_running_scanner(client, scan_root, monkeypatch):
     st = client.get("/scanner").json()
     assert st["online"] and st["markets"][0] == {"market": "NSE", "ok": True, "last": "2026-11-23",
                                                   "dates": ["2026-11-23"], "warning": None}
-    assert client.post("/scanner/run", json={"market": "nse"}).json()["ok"] is True
-    assert ("/api/launcher/scan", {"market": "NSE", "date": "2026-11-23"}) in calls      # latest date by default
-    client.post("/scanner/run", json={"market": "NSE", "date": "2026-11-20"})
+    # the latest date (23 Nov) is already scanned: refused, the scanner is not asked
+    r = client.post("/scanner/run", json={"market": "nse"})
+    assert r.status_code == 409 and "already scanned for 2026-11-23" in r.json()["detail"]
+    assert ("/api/launcher/scan", {"market": "NSE", "date": "2026-11-23"}) not in calls
+    assert client.post("/scanner/run", json={"market": "NSE", "date": "2026-11-20"}).json()["ok"] is True
     assert ("/api/launcher/scan", {"market": "NSE", "date": "2026-11-20"}) in calls
     assert client.post("/scanner/run", json={"market": "NYSE"}).status_code == 409        # no NYSE folder set
     assert client.get("/scanner/job", params={"since": 4}).json()["state"] == "running"
@@ -144,3 +146,31 @@ def test_scan_rows_carry_company_names(client, scan_root):
     by = {r["ticker"]: r for r in client.get("/scanner/scans/NSE_daily_2026-11-23").json()["signals"]}
     assert by["TCS"]["name"] == name
     assert by["MARICO"]["name"] == ""                       # not in the test universe
+
+
+def test_chart_pages_are_dropped_after_a_scan(client, scan_root, monkeypatch):
+    """A scan's charts/ folder (the scanner's chart pages) is removed; its data stays."""
+    root, _ = scan_root
+    day = root / "my_scans" / "NSE_daily_2026-11-23"
+    (day / "charts").mkdir()
+    (day / "charts" / "MARICO_BBR_2026-11-23.html").write_text("x" * 5000)
+    (root / "my_scans" / "_lib" / "keep.js").write_text("lib")                # not a scan: never touched
+    monkeypatch.setattr(scanner, "_server", lambda p, b=None, timeout=2.0:
+                        {"state": "done", "folder": "NSE_daily_2026-11-23", "log": ["done"], "next": 1})
+    assert client.get("/scanner/job").json()["state"] == "done"
+    assert not (day / "charts").exists() and (day / "signals.csv").is_file() and (day / "market.json").is_file()
+    assert (root / "my_scans" / "_lib" / "keep.js").is_file()
+    d = client.get("/scanner/scans/NSE_daily_2026-11-23").json()                # the scan still reads
+    assert d["signals"] and d["report_href"]
+
+
+def test_slim_all_scans_and_keep_charts_setting(scan_root, monkeypatch):
+    root, _ = scan_root
+    for name in ("NSE_daily_2026-11-23", "NYSE_daily_2026-11-17"):
+        (root / "my_scans" / name / "charts").mkdir()
+        (root / "my_scans" / name / "charts" / "a.html").write_text("x" * 1000)
+    monkeypatch.setattr(get_settings(), "scanner_keep_charts", True)
+    assert scanner.slim_scans(root) == (0, 0)                                  # kept when asked to
+    monkeypatch.setattr(get_settings(), "scanner_keep_charts", False)
+    assert scanner.slim_scans(root) == (2, 2000)
+    assert not any((root / "my_scans").glob("*/charts"))

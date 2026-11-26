@@ -12,7 +12,7 @@ function storedTheme(): Theme {
   }
 }
 
-/** Setup Screener on its own page (/?page=setups): the SwingScanner's buy signals by date and market, with the
+/** Setup Screener on its own page (/?page=setups): the SwingScanner's breakouts by date and market, with the
  * portfolio sizing and "why this trade". A signal opens its chart in the shared Charting Lab tab. */
 export default function SetupPage() {
   const [theme, setTheme] = useState<Theme>(storedTheme);
@@ -35,7 +35,7 @@ export default function SetupPage() {
       <header className="topbar">
         <a className="brand" href="/" title="Open the chart"><Logo /> Charting Lab</a>
         <span className="page-title">Setup Screener</span>
-        <span className="muted small">Trades from your SwingScanner rulebook: buy signals with entry, stop, quantity, and why</span>
+        <span className="muted small">Breakouts from your SwingScanner rulebook: entry, stop, quantity, and why</span>
         <span className="spacer" />
         <button className="theme-toggle" onClick={flip} title={theme === "dark" ? "Switch to day view" : "Switch to night view"}>
           {theme === "dark" ? "☾ Night" : "☀ Day"}

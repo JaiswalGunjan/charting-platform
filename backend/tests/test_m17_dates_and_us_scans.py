@@ -3,7 +3,7 @@
   'no symbol produced bars' error gets a plain explanation; NYSE / NASDAQ scans are listed like NSE ones.
 - Pattern Screener: a screen for a past session, saved per date; the newest stays the default; dates are listed."""
 import json
-from datetime import date
+from datetime import date, timedelta
 
 from app.api import scanner
 from app.patterns import screener as sc
@@ -176,3 +176,41 @@ def test_a_date_without_its_own_screen_gets_the_session_before(client, monkeypat
     assert get("1W", "2026-11-18")["missing"] is True                      # Wednesday, but the week's screen is Friday's
     assert get("1W", "2026-11-22")["session"] == "2026-11-20"              # Sunday of that week
     assert get("1W", "2026-11-25")["missing"] is True                      # next week: not screened
+
+
+def test_a_saved_screen_is_not_screened_again(client, monkeypatch, tmp_path):
+    from app.api import screener as api_sc
+    monkeypatch.setattr(sc, "SCREEN_DIR", tmp_path)
+    latest = client.get("/screener/patterns-today", params=dict(exchange="NSE", tf="1D")).json()["latest_session"]
+    assert latest                                                      # the newest session with data
+    (tmp_path / f"NSE_1D_{latest}.json").write_text(json.dumps(dict(session=latest, rows=[], scanned=1)))
+    for body in (dict(exchange="NSE", tf="1D"), dict(exchange="NSE", tf="1D", date=latest)):
+        r = client.post("/screener/patterns-today/run", json=body)
+        assert r.status_code == 409 and f"already screened for {latest}" in r.json()["detail"]
+    assert api_sc._JOB.state != "running"                             # nothing started
+    # a later date (a weekend, a holiday, no data yet) resolves to the last session: refused as well
+    later = (date.fromisoformat(latest) + timedelta(days=2)).isoformat()
+    assert client.post("/screener/patterns-today/run", json=dict(exchange="NSE", tf="1D", date=later)).status_code == 409
+
+
+def test_a_saved_scan_is_not_run_again(client, scan_root, monkeypatch):  # noqa: F811
+    sent = []
+    online(monkeypatch)
+    real = scanner._server
+    monkeypatch.setattr(scanner, "_server", lambda p, b=None, timeout=2.0: sent.append((p, b)) or real(p, b, timeout))
+    r = client.post("/scanner/run", json=dict(market="NSE", date="2026-11-23"))     # saved in the fixture
+    assert r.status_code == 409 and "already scanned" in r.json()["detail"]
+    assert not any(p == "/api/launcher/scan" for p, _ in sent)
+    assert client.post("/scanner/run", json=dict(market="NSE", date="2026-11-20")).status_code == 200
+
+
+def test_a_replaced_newest_screen_keeps_its_dated_file(db, monkeypatch, tmp_path):  # noqa: F811
+    """A screen saved before dated files existed lives only in EX_TF.json; a newer screen must not wipe it."""
+    monkeypatch.setattr(sc, "latest_hits", fake_hits)
+    old = dict(exchange="NSE", tf="1D", as_of=LAST - 2 * DAY, last_session=LAST - 2 * DAY, rows=[], scanned=7)
+    (tmp_path / "NSE_1D.json").write_text(json.dumps(old))                     # legacy: no dated file, no "session"
+    sc.run_screen(db, "NSE", "1D", root=tmp_path)                              # the newest session replaces it
+    assert sc.load_screen("NSE", "1D", tmp_path)["session"] == sc.session_date(LAST)
+    kept = sc.saved_screen("NSE", "1D", sc.session_date(LAST - 2 * DAY), tmp_path)
+    assert kept and kept["scanned"] == 7                                       # still there, under its date
+    assert sc.screen_dates("NSE", "1D", tmp_path)[:2] == [sc.session_date(LAST), sc.session_date(LAST - 2 * DAY)]

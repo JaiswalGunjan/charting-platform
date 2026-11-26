@@ -27,6 +27,8 @@ from sqlalchemy import select
 from app.api.deps import SessionDep
 from app.config import get_settings
 from app.models import Symbol
+from app.scanner_explain import market_note, rulebook, score_note
+from app.wording import neutral, neutral_all
 
 router = APIRouter(prefix="/scanner", tags=["scanner"])
 SCAN_ID = re.compile(r"^(NSE|BSE|NYSE|NASDAQ)_daily_(\d{4}-\d{2}-\d{2})$")
@@ -131,6 +133,30 @@ def data_warnings(root: Path) -> dict[str, dict]:
     return out
 
 
+def drop_charts(folder: Path) -> int:
+    """Remove a scan's charts/ folder (the scanner's chart page per signal: most of a scan's size; Charting Lab draws
+    its own charts). Returns the bytes freed. Only `<scans>/<MARKET>_daily_<date>/charts` is ever removed."""
+    import shutil
+
+    charts = folder / "charts"
+    if get_settings().scanner_keep_charts or not SCAN_ID.match(folder.name) or not charts.is_dir():
+        return 0
+    size = sum(f.stat().st_size for f in charts.rglob("*") if f.is_file())
+    shutil.rmtree(charts, ignore_errors=True)
+    return size
+
+
+def slim_scans(root: Path) -> tuple[int, int]:
+    """drop_charts() on every saved scan: (scans slimmed, bytes freed)."""
+    n = freed = 0
+    for p in scans_dir(root).glob("*_daily_*"):
+        if (p / "signals.csv").is_file():
+            got = drop_charts(p)
+            n += bool(got)
+            freed += got
+    return n, freed
+
+
 def _num(v: str):
     try:
         x = float(v)
@@ -155,6 +181,8 @@ def _rows(path: Path, market: str) -> list[dict]:
             row["entry"] = row["close"]
             row["risk"] = round(row["close"] - row["stop"], 4) if row["close"] is not None and row["stop"] is not None                 else None
             row["buy"] = row["valid"] and row["status"].strip().lower() == "would buy"
+            for k in ("status", "notes", "stop_note", "reject", "weak", "soft"):    # on-screen text: no buy/sell words
+                row[k] = neutral(row[k])
             out.append(row)
     return out
 
@@ -209,6 +237,12 @@ def status() -> dict:
                 markets=markets, scans=_list(scans_dir(root)))
 
 
+# when a scan has no report page: the scanner's priority score in brief (swingbt/rules/priority.py)
+SCORE_NOTE = ("Score = the scanner's priority score: cycle phase + setup weight + pocket pivots in the pattern + "
+              "closeness to the 10-day high + tight stop + relative strength + nearness to the 52-week high + OBV high + "
+              "confluence + volume contraction, minus a penalty per soft miss. Higher ranks first.")
+
+
 @router.get("/scans/{scan_id}")
 def get_scan(scan_id: str, session: SessionDep, near: bool = Query(True)) -> dict:
     root = scanner_dir()
@@ -236,7 +270,7 @@ def get_scan(scan_id: str, session: SessionDep, near: bool = Query(True)) -> dic
     for r in signals + misses:
         r["name"] = names.get(r["ticker"]) or ""
         r["chart_href"] = f"/scanner/report/{scan_id}/{r['chart']}" if r["chart"] else ""
-        r["setup_name"] = info.get(r["setup"], {}).get("name", r["setup"])
+        r["setup_name"] = neutral(info.get(r["setup"], {}).get("name", r["setup"]))
     present = sorted({r["setup"] for r in signals + misses})
     setups = {c: info.get(c, dict(name=c, what="", why="")) for c in present}
     mr = meta.get("market_row") or {}
@@ -244,13 +278,15 @@ def get_scan(scan_id: str, session: SessionDep, near: bool = Query(True)) -> dic
                 rules=meta.get("rules"), symbols=meta.get("symbols"), report_href=f"/scanner/report/{scan_id}/index.html",
                 capital=meta.get("capital"), risk_pct=(meta.get("config") or {}).get("risk_pct", 1.0),
                 max_alloc_pct=(meta.get("config") or {}).get("max_alloc_pct", 45.0),
-                signals=signals, near_misses=misses, setups=setups)
+                signals=signals, near_misses=misses, setups=neutral_all(setups),
+                market_note=neutral_all(market_note(market, mr, rulebook(root))),
+                score_note=neutral(score_note(folder)) or neutral(SCORE_NOTE))
 
 
 @router.get("/setups")
 def setups() -> dict:
     """Every buy setup the scanner knows, with its name and explanation."""
-    return setup_info(scanner_dir())
+    return neutral_all(setup_info(scanner_dir()))
 
 
 @router.get("/portfolio")
@@ -282,6 +318,10 @@ def run_scan(body: RunIn) -> dict:
         day = next((m.get("last") for m in st.get("markets", []) if m.get("market") == market and m.get("ok")), None)
         if not day:
             raise HTTPException(409, f"The scanner has no {market} data folder set.")
+    # a scan that is already saved is not run again
+    root = scanner_dir()
+    if root is not None and (scans_dir(root) / f"{market}_daily_{day}" / "signals.csv").is_file():
+        raise HTTPException(409, f"{market} is already scanned for {day}; the saved scan is shown")
     r = _server("/api/launcher/scan", dict(market=market, date=day))
     if r is None:
         raise HTTPException(503, "The scanner is not running: start SwingScanner.exe, then try again.")
@@ -296,6 +336,10 @@ def job(since: int = 0) -> dict:
     if r is None:
         raise HTTPException(503, "The scanner is not running.")
     log = r.get("log") or []
+    if r.get("state") == "done" and r.get("folder"):
+        root = scanner_dir()
+        if root is not None:
+            drop_charts(scans_dir(root) / str(r["folder"]))       # keep the scan's data, not its chart pages
     if r.get("state") == "error" and any("no symbol produced bars" in str(x) for x in log[-3:]):
         root = scanner_dir()
         w = data_warnings(root).get(str(r.get("market", "")).upper()) if root else None
@@ -328,4 +372,4 @@ def explain_signal(scan_id: str, symbol: str = Query(..., description="ticker, e
     if row is None:
         raise HTTPException(404, f"{ticker} {setup} is not in {scan_id}")
     info = setup_info(root).get(setup, dict(name=setup, what="", why=""))
-    return explain(row, m.group(1), info, rulebook(root), load_meta(folder), equity, risk_pct)
+    return neutral_all(explain(row, m.group(1), info, rulebook(root), load_meta(folder), equity, risk_pct))

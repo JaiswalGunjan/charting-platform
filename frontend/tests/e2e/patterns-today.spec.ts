@@ -14,14 +14,19 @@ test("patterns today: saved screen, AND filter with clear, category sections, so
   await openScreener(page, { "today.minTurnover": 0, "today.patterns": [], "today.tf": "1D", "today.sort": { key: "patterns", dir: -1 } });
   const dash = page.locator(".today");
 
-  // screen once; the result is saved and shown again without re-screening
-  const screenBtn = dash.getByRole("button", { name: /Screen NSE now|Update screen/ }).first();
-  await screenBtn.click();
+  // run once; the result is saved, shown again without re-screening, and cannot be run again
+  const runBtn = dash.locator(".today-head .run-btn");
+  await expect(runBtn).toContainText("▶ Run pattern screen");
+  await runBtn.click();
   await expect(dash.locator(".today-asof")).toContainText("Saved screen", { timeout: 30_000 });
+  await expect(runBtn).toHaveText("✓ Screened");
+  await expect(runBtn).toBeDisabled();
   const savedAt = await dash.locator(".today-asof").textContent();
   await page.reload();
   await expect(dash.locator(".today-asof")).toHaveText(savedAt!);           // same saved screen, nothing re-run
-  await expect(dash.getByRole("button", { name: /Update screen/ })).toBeVisible();
+  await expect(runBtn).toBeDisabled();
+  const again = await page.request.post("/api/screener/patterns-today/run", { data: { exchange: "NSE", tf: "1D" } });
+  expect(again.status()).toBe(409);                                          // the backend refuses it too
 
   // one section per category, each pattern with a description
   const sections = dash.locator(".today-section h3");
@@ -87,14 +92,14 @@ test("patterns today: weekly screen, turnover floor, search, saved per exchange 
   await expect(dash.getByRole("button", { name: "Weekly" })).toHaveClass(/active/);
 
   // weekly is screened separately and labelled as the week (in progress)
-  await dash.getByRole("button", { name: /Screen NSE now|Update screen/ }).first().click();
+  await dash.locator(".today-head .run-btn").click();
   await expect(dash.locator(".today-asof")).toContainText("week of", { timeout: 30_000 });
   await expect(dash.locator(".today-asof")).toContainText("week in progress");
 
   // daily keeps its own saved screen; switching back and forth does not re-screen
   await dash.getByRole("button", { name: "Daily" }).click();
-  const daily = dash.getByRole("button", { name: /Screen NSE now|Update screen/ }).first();
-  if ((await daily.textContent())?.includes("Screen NSE now")) {
+  const daily = dash.locator(".today-head .run-btn");
+  if (await daily.isEnabled()) {
     await daily.click();
     await expect(dash.locator(".today-asof")).toContainText("latest bar", { timeout: 30_000 });
   }
@@ -109,11 +114,25 @@ test("patterns today: weekly screen, turnover floor, search, saved per exchange 
   expect(all).toBeGreaterThan(0);
 
   // a very high turnover floor removes every stock and says why; back to 0 restores them
-  const floor = dash.locator(".today-row2 label.mini input");
+  const floor = dash.locator(".today-row2 label.mini input[type=number]");
   await floor.fill("100000");
   await expect.poll(count).toBe(0);
-  await expect(dash.locator(".today-table tbody")).toContainText("with turnover above 100000 ₹ Cr");
+  await expect(dash.locator(".today-table tbody")).toContainText("with average turnover (20) above 100000 ₹ Cr");
   await floor.fill("0");
+  await expect.poll(count).toBe(all);
+
+  // turnover = 20-day average (typical price x volume); HTQ marks a quarter high, and "HTQ only" keeps just those
+  // the number of days is on screen: in the column, the filter and their tooltips
+  await expect(dash.locator("th", { hasText: "Avg turnover" })).toContainText("Avg turnover (20)");
+  await expect(dash.locator("th", { hasText: "Avg turnover" })).toHaveAttribute("title", /last 20 sessions: typical price/);
+  await expect(dash.locator(".today-row2")).toContainText("Min avg turnover (20)");
+  await expect(dash.locator(".today-row2 label.mini").first()).toHaveAttribute("title", /last 20 sessions/);
+  await expect(dash.locator(".today-table tbody tr td").nth(4)).toHaveAttribute("title", /Average of the last 20 sessions/);
+  const badges = await dash.locator(".today-table tbody tr .htq").count();
+  await dash.getByLabel("HTQ only").check();
+  await expect.poll(count).toBe(badges);
+  for (const r of await dash.locator(".today-table tbody tr").all()) await expect(r.locator(".htq")).toHaveCount(1);
+  await dash.getByLabel("HTQ only").uncheck();
   await expect.poll(count).toBe(all);
 
   // search by company name (case-insensitive) narrows the table
@@ -129,8 +148,8 @@ test("patterns today: weekly screen, turnover floor, search, saved per exchange 
 test("pattern screener: screens of past sessions are saved and picked by date", async ({ page }) => {
   await openScreener(page, { "today.minTurnover": 0, "today.patterns": [], "today.tf": "1D", "today.exchange": "NSE" });
   const dash = page.locator(".today");
-  const update = dash.getByRole("button", { name: /Screen NSE now|Update screen/ }).first();
-  if ((await update.textContent())?.includes("Screen NSE now")) await update.click();
+  const runBtn = dash.locator(".today-head .run-btn");
+  if (await runBtn.isEnabled()) await runBtn.click();
   await expect(dash.locator(".today-asof")).toContainText("latest bar", { timeout: 30_000 });
 
   // screen a session a week earlier (as the CLI's --days backfill does), then pick it
@@ -147,11 +166,23 @@ test("pattern screener: screens of past sessions are saved and picked by date", 
   await dash.getByRole("button", { name: "Daily" }).click();
   await expect(dash.locator(".today-asof")).toContainText("2 saved sessions");
   const picker = dash.getByLabel("Session date");
-  await expect(picker).toHaveAttribute("min", session);         // the calendar spans the saved sessions
+  await expect(picker).toHaveAttribute("max", latest.session);  // the calendar reaches the newest data
   await expect(picker).toHaveValue(latest.session);
   await picker.fill(session);
   await expect(dash.locator(".today-asof")).toContainText("bar of");
-  await expect(dash.getByRole("button", { name: /Re-screen/ })).toBeVisible();
+  await expect(runBtn).toHaveText("✓ Screened");                // saved: nothing to run
+  await expect(runBtn).toBeDisabled();
+
+  // a session without a saved screen can be run from here, once
+  const older = new Date((latest.last_session + 19800 - 14 * 86400) * 1000).toISOString().slice(0, 10);
+  await picker.fill(older);
+  await expect(dash.locator(".today-empty")).toContainText("has not been screened yet");
+  await expect(runBtn).toBeEnabled();
+  await expect(runBtn).toContainText("▶ Run pattern screen");
+  await runBtn.click();
+  await expect(dash.locator(".today-asof")).toContainText("bar of", { timeout: 30_000 });
+  await expect(runBtn).toHaveText("✓ Screened");
+  await picker.fill(session);
   // the picked date stays when the exchange or timeframe changes
   await dash.getByRole("group", { name: "Timeframe" }).getByRole("button", { name: "Weekly" }).click();
   await expect(picker).toHaveValue(session);
