@@ -120,3 +120,30 @@ def test_both_file_layouts_read_as_dollars(tmp_path):
     assert list(a.columns) == ["ts", "open", "high", "low", "close", "volume"]
     assert b.close.tolist() == pytest.approx(prices, abs=1e-9) and a.close.tolist() == b.close.tolist()
     assert b.volume.tolist() == [10, 20] and b.close.dtype == "float64"
+
+
+def test_hourly_charts_use_minutes_where_they_are_newer(client, session_factory):
+    """Imported 1h bars end on their own date while minute bars run on: the latest 1h pages come from minutes, a page
+    before the 1h bars' end from the 1h bars (each the source that has that period)."""
+    from sqlalchemy import delete, select
+
+    from app.marketdata.barstore import SqlBarStore
+    from app.marketdata.timeframes import TIMEFRAMES, market_for, resample
+    from app.models import Candle, Symbol
+
+    store = SqlBarStore()
+    with session_factory() as s:
+        tcs = s.scalar(select(Symbol.id).where(Symbol.exchange == "NSE", Symbol.ticker == "TCS"))
+        m = store.read_latest(s, tcs, "1m", 10**6)
+        t, o, h, l, c, v = resample(TIMEFRAMES["1h"], m[:, 0].astype(np.int64), *m[:, 1:].T, market=market_for("NSE"))
+        cut = len(t) // 2                                       # 1h bars for the first half only, marked (+1000)
+        store.append(s, "1h", np.full(cut, tcs), {"ts": t[:cut], "o": o[:cut] + 1000, "h": h[:cut] + 1000,
+                                                  "l": l[:cut] + 1000, "c": c[:cut] + 1000, "v": v[:cut]})
+        try:
+            latest = client.get("/history", params=dict(symbol="NSE:TCS", tf="1h", limit=10)).json()
+            assert latest["t"][-1] == int(t[-1]) and latest["c"][-1] == pytest.approx(c[-1])      # from minutes
+            older = client.get("/history", params=dict(symbol="NSE:TCS", tf="1h", limit=5, to=int(t[cut - 1]))).json()
+            assert older["c"] == pytest.approx([x + 1000 for x in c[cut - 6:cut - 1]])            # from the 1h bars
+        finally:
+            s.execute(delete(Candle).where(Candle.symbol_id == tcs, Candle.tf == "1h"))
+            s.commit()

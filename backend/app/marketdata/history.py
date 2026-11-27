@@ -31,15 +31,28 @@ def symbol_market(session: Session, symbol_id: int) -> Market:
     return market_for(ex) if ex else IST_MARKET
 
 
-def pick_base(session: Session, symbol_id: int, tf: Timeframe) -> str:
-    """The best stored base for this symbol (e.g. imported 1h bars over 1m)."""
+def _last(store, session: Session, symbol_id: int, base: str) -> int | None:
+    got = store.read_latest(session, symbol_id, base, 1, cols=("ts",))
+    return int(got[0, 0]) if len(got) else None
+
+
+def pick_base(session: Session, symbol_id: int, tf: Timeframe, at: int | None = None) -> str:
+    """The stored base to build `tf` from, for the bars around time `at` (None = the newest).
+
+    The coarser base (imported 1h bars) is preferred: fewer rows, and it reaches further back. The finer one (1m) is
+    used where it is newer: the 1h import ends on its own date while minute bars run on (Alpaca minutes, live bars),
+    so the latest pages of a 1h chart come from minutes and older pages (`at` within the 1h bars) from the 1h bars."""
     if len(tf.bases) == 1:
         return tf.base
     store = bar_store()
-    for base in tf.bases[:-1]:
-        if store.has(session, symbol_id, base):
-            return base
-    return tf.base
+    coarse, fine = tf.bases[0], tf.bases[-1]
+    last_coarse = _last(store, session, symbol_id, coarse)
+    if last_coarse is None:
+        return fine
+    last_fine = _last(store, session, symbol_id, fine)
+    if last_fine is not None and last_fine > last_coarse and (at is None or at > last_coarse):
+        return fine
+    return coarse
 
 
 def get_bars(session: Session, symbol_id: int, tf: Timeframe, *, limit: int,
@@ -49,7 +62,7 @@ def get_bars(session: Session, symbol_id: int, tf: Timeframe, *, limit: int,
     `to` should be a bucket boundary (e.g. a previous response's first bar time)
     so that no bucket is split across pages.
     """
-    base = pick_base(session, symbol_id, tf)
+    base = pick_base(session, symbol_id, tf, at=to)
     per_bar = tf.per_bar(base)
     fetch_n = limit * per_bar + per_bar
     rows = bar_store().read_latest(session, symbol_id, base, fetch_n, to=to, frm=frm)
@@ -74,7 +87,7 @@ def get_bars_after(session: Session, symbol_id: int, tf: Timeframe, *, frm: int,
 
     Used for indicators that look ahead (e.g. Ichimoku's lagging span) when a page ends at `to`.
     """
-    base = pick_base(session, symbol_id, tf)
+    base = pick_base(session, symbol_id, tf, at=frm)
     per_bar = tf.per_bar(base)
     fetch_n = (limit + 1) * per_bar
     rows = bar_store().read_after(session, symbol_id, base, frm, fetch_n)
