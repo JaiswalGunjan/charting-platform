@@ -3,6 +3,7 @@ import { API, api, type ScannerScan, type ScannerSignal, type ScannerStatus, typ
 import { fmt } from "./format";
 import { positionSize, type Size } from "./sizing";
 import { currencyOf, currencySymbol, markets, money } from "./markets";
+import { isAdmin } from "./auth";
 
 type View = "buy" | "near";
 const VIEW_LABEL: Record<View, string> = { buy: "Breakouts", near: "Near misses" };   // no buy / sell words (SEBI)
@@ -323,6 +324,7 @@ export default function ScannerPanel(props: {
             })}
           </nav>
         </div>
+        {isAdmin() && (
         <button className={`small run-btn${runnable && status.online ? " primary" : ""}`}
           disabled={running || !runnable || !status.online} onClick={run}
           title={runSaved ? `Already scanned for ${niceDate(runDate)}: the saved scan is shown`
@@ -331,12 +333,14 @@ export default function ScannerPanel(props: {
             : `Scan ${mkt} for ${niceDate(runDate)} and save it`}>
           {running ? "Scanning…" : runSaved || (!runnable && !!target) ? "✓ Scanned" : `▶ Run setup scan${runDate ? ` · ${niceDate(runDate)}` : ""}`}
         </button>
+        )}
       </div>
       {job && <div className={`hint scan-log${job.state === "error" ? " error" : ""}`}>{job.line}</div>}
       {job?.state === "error" && job.hint && <div className="hint scan-hint">{job.hint}</div>}
       {mkt && !target && (
         <div className="hint scan-missing">No {mkt} scan is saved for {niceDate(day || runDate)}.{" "}
-          {runnable ? (status.online ? "Run it with the button above, or pick another date." : `Start ${scannerName} to run it, or pick another date.`)
+          {runnable && isAdmin() ? (status.online ? "Run it with the button above, or pick another date." : `Start ${scannerName} to run it, or pick another date.`)
+            : runnable ? "The nightly scan has not saved it yet; pick another date, or "
             : "Pick another date, or "}
           {!runnable && <button className="link" onClick={() => setDay("")}>the latest scan</button>}{!runnable && "."}</div>
       )}

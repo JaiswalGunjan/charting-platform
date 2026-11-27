@@ -42,7 +42,7 @@ Lightweight Charts + FastAPI + PostgreSQL/TimescaleDB + Redis + Kite Connect:
 6. First AI feature: "explain this chart" from OHLCV + indicator context.
 
 ## Implementation status (24 Nov 2026)
-Milestones M1–M12 are built: backend (`backend/`, 345 pytest tests (+5 with TEST_PG_URL); 75 Vitest + 25 Playwright tests in `frontend/tests`) and frontend (`frontend/`,
+Milestones M1–M12 are built: backend (`backend/`, 393 pytest tests (+5 more with TEST_PG_URL); 78 Vitest + 31 Playwright tests in `frontend/tests`) and frontend (`frontend/`,
 React 19 + Vite 7 + lightweight-charts 5.3, v5 `addSeries(XSeries, opts, paneIndex)` API).
 `run-demo.ps1` starts everything. See README.md for the milestone table and API overview.
 Node is a portable copy in `.tools/node` (gitignored); put it on PATH before running npm.
@@ -108,6 +108,25 @@ random start + 5x~5 and 5x~10 minute retries, then import, setup scan and patter
 PostgreSQL trial: portable PostgreSQL 18.7 + TimescaleDB 2.32.1 in `.tools/pgsql` (`scripts/pg_local.ps1`, port 5433;
 TimescaleDB's Windows build needs the matching minor release: 2.32.1 failed on 18.6, works on 18.7); copy with
 `scripts/sqlite_to_postgres.py`; `TEST_PG_URL` runs the backend tests on it. Not the app's default (SQLite).
+
+Sign-in (owner, 27 Nov 2026): Google OpenID Connect via Authlib (app/api/auth.py, app/auth/), any Google account,
+existing data stays with the built-in local user (id 1, reserved at start-up), new users start with a starter
+watchlist only; AUTH_MODE=local for dev/tests (loopback only; the owner's .env uses it until his Google client exists).
+Every router is included with Depends(require_user) in main.py (new routers too!); the WS checks the cookie
+(close 4401); HTML pages that need sign-in redirect to /?next=. Per-user data via `user: UserDep`; alerts go to their
+owner (LiveService.send_to_user). Admins (ADMIN_EMAILS): /scanner/run, /screener/patterns-today/run, /admin/*.
+Recorded: users (Google profile, logins, active time, last IP/location), login_events, user_sessions (token hash),
+user_days, user_feature_days, user_symbols (app/auth/activity.py, flushed every 30 s); /?page=users + CSV;
+`app.cli prune-activity`. Locations: DB-IP IP to City Lite only (owner dropped MaxMind, 27 Nov 2026),
+backend/data/geoip (app/auth/geoip.py, `app.cli update-geoip`, monthly in the nightly job's [[maintenance]]),
+read with maxminddb; credit "IP Geolocation by DB-IP" on the Users page (CC BY 4.0). UI: main.tsx asks /api/auth/me first (SignInPage otherwise), api.ts/live.ts go to sign-in on
+401/4401, UserMenu in every top bar, Run buttons for admins only.
+
+Admin dashboard (owner, 27 Nov 2026): `frontend/src/AdminPage.tsx` (/?page=admin), API /admin/status, /admin/jobs
+(app/admin_jobs.py: runs scripts/daily_update.py --only download,import|scan|screen --now as a subprocess, one at a
+time, live log, history in <DAILY_LOGS_DIR>/admin_jobs.json; ADMIN_JOBS_DRY_RUN for the browser tests). main.tsx shows
+"Not available" for admin pages to non-admins before anything loads. Tests set DAILY_LOGS_DIR to scratch folders
+(never the real backend/data/logs).
 
 ## Tests
 `run-tests.ps1` runs backend pytest, frontend type check + Vitest and Playwright end-to-end (isolated seeded backend

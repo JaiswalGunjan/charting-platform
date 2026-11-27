@@ -3,6 +3,7 @@ import { api, ApiError, type PatternMeta, type PatternsToday as Screen, type Tod
 import { fmt } from "./format";
 import { liquidRows, matchRows, nextSort, patternCounts, sortRows, turnoverLabel, turnoverText, type Sort, type SortKey } from "./todayLogic";
 import { markets } from "./markets";
+import { isAdmin } from "./auth";
 
 function usePersisted<T>(key: string, init: T): [T, (v: T) => void] {
   const [v, setV] = useState<T>(() => {
@@ -155,11 +156,13 @@ export default function PatternsToday(props: {
           </nav>
         </div>
         <span className="spacer" />
+        {isAdmin() && (
         <button className={`small run-btn${canRun ? " primary" : ""}`} disabled={running || !canRun} onClick={run}
           title={canRun ? `Screen every ${exchange} stock for ${runDate ? niceDay(runDate) : "the latest session"} and save it (about a minute)`
             : `Already screened for ${screen?.session ? niceDay(screen.session) : "this date"}: the saved screen is shown`}>
           {running ? "Screening…" : canRun ? `▶ Run pattern screen${runDate ? ` · ${niceDay(runDate)}` : ""}` : "✓ Screened"}
         </button>
+        )}
       </div>
       <div className="today-status">
         <span className="muted small today-asof">
@@ -179,7 +182,7 @@ export default function PatternsToday(props: {
       {screen?.missing && !running && (
         <div className="today-empty">
           <p>{exchange} {tf === "1D" ? "daily" : "weekly"}{session ? ` for ${niceDay(session)}` : ""} has not been screened yet.</p>
-          <button className="primary" onClick={run} disabled={running}>▶ Run pattern screen</button>
+          {isAdmin() && <button className="primary" onClick={run} disabled={running}>▶ Run pattern screen</button>}
           <p className="muted small">The result is saved; this page shows it until you update it.
             You can also run <code>python -m app.cli screen</code> after each data import.</p>
         </div>

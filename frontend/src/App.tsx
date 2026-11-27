@@ -13,6 +13,7 @@ import { RANGES, timeframeForRange, type RangeId } from "./ranges";
 import { useTheme, type Theme } from "./theme";
 import { currencyOf } from "./markets";
 import { defaultEquity, equityKey } from "./ScannerPanel";
+import UserMenu from "./UserMenu";
 
 const TF_SHORT: Record<string, string> = { "1D": "D", "1W": "W", "1M": "M", "1Y": "Y" };
 const TF_GROUPS: [string, string[]][] = [
@@ -245,6 +246,7 @@ export default function App() {
           onClick={() => setThemeChoice(theme === "dark" ? "light" : "dark")}>
           {theme === "dark" ? "☾ Night" : "☀ Day"}
         </button>
+        <UserMenu />
       </header>
 
       <main className="main">

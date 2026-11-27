@@ -13,8 +13,9 @@ import asyncio
 import contextlib
 import logging
 
-from fastapi import APIRouter, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
 
+from app.auth.deps import require_user, user_for_websocket
 from app.live.service import LiveService
 
 log = logging.getLogger(__name__)
@@ -28,7 +29,7 @@ def get_live(request: Request) -> LiveService:
     return live
 
 
-@router.get("/quotes")
+@router.get("/quotes", dependencies=[Depends(require_user)])
 async def quotes(request: Request, symbols: str = Query(..., examples=["NSE:RELIANCE,NSE:TCS"])) -> list[dict]:
     """Latest quotes; starts streaming any symbol not already live (kept alive via pin)."""
     live = get_live(request)
@@ -44,13 +45,17 @@ async def quotes(request: Request, symbols: str = Query(..., examples=["NSE:RELI
 
 @router.websocket("/ws")
 async def ws_endpoint(ws: WebSocket) -> None:
+    user = await asyncio.to_thread(user_for_websocket, ws)
+    if user is None:
+        await ws.close(code=4401, reason="not signed in")   # the UI goes to the sign-in page
+        return
     await ws.accept()
     live = getattr(ws.app.state, "live", None)
     if live is None:
         await ws.send_json({"type": "error", "message": "live data disabled"})
         await ws.close()
         return
-    conn = live.new_connection(ws.send_json)
+    conn = live.new_connection(ws.send_json, user_id=user.id)
     sender = asyncio.create_task(conn.run_sender())
     try:
         while True:

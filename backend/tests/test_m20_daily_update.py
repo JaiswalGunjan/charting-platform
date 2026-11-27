@@ -252,3 +252,33 @@ def test_other_tools_run_from_the_config_alone(job, tmp_path, monkeypatch):
     assert [c[0] for c in calls] == ["load NSE,BSE", "pattern screen"]
     with pytest.raises(KeyError, match="nowhere"):
         job.fill("{nowhere}/x", {})                                         # a typo in the config is named
+
+
+
+def test_maintenance_runs_every_day_even_a_holiday(job, monkeypatch):
+    """The location database refresh and the old-records clean-up run on closed days too; a failure is logged only."""
+    names = []
+    monkeypatch.setattr(job, "run", lambda cmd, cwd, name, timeout=0, env=None: names.append((name, cmd)) or False)
+    monkeypatch.setattr(job, "download", lambda *a, **k: pytest.fail("a closed day downloads nothing"))
+    assert job.main(["--market", "NSE", "--date", "2026-11-24"]) == 0          # an NSE holiday: skipped, still 0
+    st = json.loads((job.LOGS / "daily_nse_status.json").read_text())
+    assert list(st["maintenance"]) == ["IP location database (monthly)", "delete old sign-in and activity records"]
+    assert st["result"] == "skipped: NSE trading holiday"
+    assert ["update-geoip", "--if-older-days", "30"] == [str(x) for x in names[0][1][-3:]]
+
+
+
+def test_some_steps_at_once_for_an_admin_click(job, monkeypatch):
+    """--only picks steps (no maintenance chores); --now downloads at once and tries once."""
+    names, slept = [], []
+    monkeypatch.setattr(job, "run", _fake_run(job, names))
+    assert job.main(["--market", "NSE", "--date", "2026-11-26", "--only", "scan,screen"]) == 0
+    assert [n[0] for n in names] == ["setup scan NSE", "drop chart pages", "pattern screen"]
+    st = json.loads((job.LOGS / "daily_nse_status.json").read_text())
+    assert st["only"] == ["scan", "screen"] and "maintenance" not in st
+    names.clear()
+    monkeypatch.setattr(job.time, "sleep", slept.append)
+    assert job.download(job.MARKETS[NSE], DAY, dry=False, now=True) is False      # the file never appears
+    assert [n[0] for n in names] == ["download (attempt 1/1)"] and slept == []    # once, no waiting
+    with pytest.raises(SystemExit):
+        job.main(["--market", "NSE", "--only", "nonsense"])

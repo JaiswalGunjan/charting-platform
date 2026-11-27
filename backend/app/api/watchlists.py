@@ -6,7 +6,8 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import SessionDep, symbol_or_404
 from app.marketdata.loader import resolve_symbol
-from app.models import LOCAL_USER_ID, Watchlist, WatchlistItem
+from app.models import Watchlist, WatchlistItem
+from app.auth.deps import UserDep
 
 router = APIRouter(prefix="/watchlists", tags=["watchlists"])
 
@@ -31,17 +32,18 @@ class WatchlistOut(BaseModel):
         return cls(id=w.id, name=w.name, symbols=[i.symbol.full for i in w.items])
 
 
-def _get(session: Session, wid: int) -> Watchlist:
+def _get(session: Session, wid: int, uid: int) -> Watchlist:
     w = session.get(Watchlist, wid)
-    if w is None or w.user_id != LOCAL_USER_ID:
+    if w is None or w.user_id != uid:
         raise HTTPException(404, f"watchlist {wid} not found")
     return w
 
 
-def ensure_default_watchlist(session: Session) -> None:
-    if session.scalar(select(func.count()).select_from(Watchlist)):
+def ensure_default_watchlist(session: Session, uid: int) -> None:
+    """A user's first visit: a starter watchlist of well-known symbols."""
+    if session.scalar(select(func.count()).select_from(Watchlist).where(Watchlist.user_id == uid)):
         return
-    w = Watchlist(name="My Watchlist")
+    w = Watchlist(name="My Watchlist", user_id=uid)
     session.add(w)
     session.flush()
     for pos, name in enumerate(DEFAULT_SYMBOLS):
@@ -52,37 +54,37 @@ def ensure_default_watchlist(session: Session) -> None:
 
 
 @router.get("", response_model=list[WatchlistOut])
-def list_watchlists(session: SessionDep) -> list[WatchlistOut]:
-    ensure_default_watchlist(session)
-    rows = session.scalars(select(Watchlist).where(Watchlist.user_id == LOCAL_USER_ID).order_by(Watchlist.id))
+def list_watchlists(user: UserDep, session: SessionDep) -> list[WatchlistOut]:
+    ensure_default_watchlist(session, user.id)
+    rows = session.scalars(select(Watchlist).where(Watchlist.user_id == user.id).order_by(Watchlist.id))
     return [WatchlistOut.of(w) for w in rows.unique()]
 
 
 @router.post("", response_model=WatchlistOut, status_code=201)
-def create_watchlist(body: WatchlistIn, session: SessionDep) -> WatchlistOut:
-    w = Watchlist(name=body.name)
+def create_watchlist(user: UserDep, body: WatchlistIn, session: SessionDep) -> WatchlistOut:
+    w = Watchlist(name=body.name, user_id=user.id)
     session.add(w)
     session.commit()
     return WatchlistOut.of(w)
 
 
 @router.patch("/{wid}", response_model=WatchlistOut)
-def rename_watchlist(wid: int, body: WatchlistIn, session: SessionDep) -> WatchlistOut:
-    w = _get(session, wid)
+def rename_watchlist(user: UserDep, wid: int, body: WatchlistIn, session: SessionDep) -> WatchlistOut:
+    w = _get(session, wid, user.id)
     w.name = body.name
     session.commit()
     return WatchlistOut.of(w)
 
 
 @router.delete("/{wid}", status_code=204)
-def delete_watchlist(wid: int, session: SessionDep) -> None:
-    session.delete(_get(session, wid))
+def delete_watchlist(user: UserDep, wid: int, session: SessionDep) -> None:
+    session.delete(_get(session, wid, user.id))
     session.commit()
 
 
 @router.post("/{wid}/items", response_model=WatchlistOut, status_code=201)
-def add_item(wid: int, body: ItemIn, session: SessionDep) -> WatchlistOut:
-    w = _get(session, wid)
+def add_item(user: UserDep, wid: int, body: ItemIn, session: SessionDep) -> WatchlistOut:
+    w = _get(session, wid, user.id)
     sym = symbol_or_404(session, body.symbol)
     full = sym.full
     if any(i.symbol_id == sym.id for i in w.items):
@@ -99,8 +101,8 @@ def add_item(wid: int, body: ItemIn, session: SessionDep) -> WatchlistOut:
 
 
 @router.delete("/{wid}/items/{symbol}", response_model=WatchlistOut)
-def remove_item(wid: int, symbol: str, session: SessionDep) -> WatchlistOut:
-    w = _get(session, wid)
+def remove_item(user: UserDep, wid: int, symbol: str, session: SessionDep) -> WatchlistOut:
+    w = _get(session, wid, user.id)
     sym = symbol_or_404(session, symbol)
     item = next((i for i in w.items if i.symbol_id == sym.id), None)
     if item is None:

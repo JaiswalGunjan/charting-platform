@@ -1,3 +1,4 @@
+import { signedOut } from "./auth";
 // Typed client for the FastAPI backend (proxied at /api by Vite).
 
 export const API = "/api";
@@ -356,6 +357,7 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
     ...init,
     headers: init?.body ? { "Content-Type": "application/json" } : undefined,
   });
+  if (r.status === 401) signedOut();                 // the session ended: sign in again, then back to this page
   if (!r.ok) {
     let msg = r.statusText;
     let detail: unknown;

@@ -5,6 +5,7 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel
 
 from app.api.deps import SessionDep, symbol_or_404, timeframe_or_400
+from app.auth.deps import UserDep
 from app.api.custom_indicators import PREFIX, get_custom, to_indicator, user_customs
 from app.indicators.registry import INDICATORS, Indicator, compute, get_indicator
 from app.marketdata.history import concat_bars, get_bars, get_bars_after
@@ -61,19 +62,20 @@ def _meta(i: Indicator) -> IndicatorMeta:
 
 
 @router.get("/indicators", response_model=list[IndicatorMeta])
-def list_indicators(session: SessionDep) -> list[IndicatorMeta]:
+def list_indicators(user: UserDep, session: SessionDep) -> list[IndicatorMeta]:
     """Built-in indicators, then the user's custom (formula) indicators."""
-    return [_meta(i) for i in INDICATORS.values()] + [_meta(to_indicator(r)) for r in user_customs(session)]
+    return [_meta(i) for i in INDICATORS.values()] + [_meta(to_indicator(r)) for r in user_customs(session, user.id)]
 
 
-def _lookup(session, ind_id: str) -> Indicator:
+def _lookup(session, ind_id: str, uid: int) -> Indicator:
     if ind_id.startswith(PREFIX):
-        return to_indicator(get_custom(session, ind_id))
+        return to_indicator(get_custom(session, ind_id, uid))
     return get_indicator(ind_id)
 
 
 @router.get("/indicators/{ind_id}", response_model=IndicatorOut)
 def indicator_values(
+    user: UserDep,
     ind_id: str,
     request: Request,
     session: SessionDep,
@@ -85,7 +87,7 @@ def indicator_values(
 ) -> IndicatorOut:
     """Indicator values aligned to /history bars. Params as query args, e.g. ?length=50."""
     try:
-        ind = _lookup(session, ind_id)
+        ind = _lookup(session, ind_id, user.id)
         params = ind.resolve_params({k: v for k, v in request.query_params.items() if k not in _RESERVED})
         warm = int(ind.warmup(params))
     except ValueError as e:

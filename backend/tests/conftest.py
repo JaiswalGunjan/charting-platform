@@ -4,6 +4,11 @@ import os
 # (BAR_STORES=1m=timescale). Tests never write there; environment variables win over .env.
 os.environ["BAR_STORES"] = ""
 os.environ["MINUTE_DATABASE_URL"] = ""
+os.environ.setdefault("AUTH_MODE", "local")   # tests sign in as the local user; test_m26 tests Google sign-in
+import tempfile  # noqa: E402
+
+# the daily job's logs and the dashboard's job history: never the real backend/data/logs
+os.environ["DAILY_LOGS_DIR"] = tempfile.mkdtemp(prefix="charting-logs-")
 
 from datetime import date, datetime  # noqa: E402
 from types import SimpleNamespace  # noqa: E402

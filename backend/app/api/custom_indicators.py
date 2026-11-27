@@ -10,7 +10,8 @@ from sqlalchemy.orm import Session
 from app.api.deps import SessionDep
 from app.indicators.formula import FormulaError, InputDef, PlotDef, Program
 from app.indicators.registry import Indicator, Param, Plot
-from app.models import LOCAL_USER_ID, CustomIndicator
+from app.models import CustomIndicator
+from app.auth.deps import UserDep
 
 router = APIRouter(prefix="/custom-indicators", tags=["indicators"])
 PREFIX = "custom-"
@@ -68,17 +69,17 @@ def to_indicator(row: CustomIndicator) -> Indicator:
     )
 
 
-def user_customs(session: Session) -> list[CustomIndicator]:
-    return list(session.scalars(select(CustomIndicator).where(CustomIndicator.user_id == LOCAL_USER_ID)
+def user_customs(session: Session, uid: int) -> list[CustomIndicator]:
+    return list(session.scalars(select(CustomIndicator).where(CustomIndicator.user_id == uid)
                                 .order_by(CustomIndicator.id)))
 
 
-def get_custom(session: Session, ind_id: str) -> CustomIndicator:
+def get_custom(session: Session, ind_id: str, uid: int) -> CustomIndicator:
     try:
         row = session.get(CustomIndicator, int(ind_id.removeprefix(PREFIX)))
     except ValueError:
         row = None
-    if row is None or row.user_id != LOCAL_USER_ID:
+    if row is None or row.user_id != uid:
         raise HTTPException(404, f"custom indicator {ind_id} not found")
     return row
 
@@ -99,8 +100,8 @@ def _apply(row: CustomIndicator, body: CustomIn) -> None:
 
 
 @router.get("", response_model=list[CustomOut])
-def list_custom(session: SessionDep) -> list[CustomOut]:
-    return [_out(r) for r in user_customs(session)]
+def list_custom(user: UserDep, session: SessionDep) -> list[CustomOut]:
+    return [_out(r) for r in user_customs(session, user.id)]
 
 
 @router.post("/check")
@@ -111,9 +112,9 @@ def check(body: CustomIn) -> JSONResponse:
 
 
 @router.post("", response_model=CustomOut, status_code=201)
-def create(body: CustomIn, session: SessionDep) -> CustomOut:
+def create(user: UserDep, body: CustomIn, session: SessionDep) -> CustomOut:
     _compile(body)
-    row = CustomIndicator(user_id=LOCAL_USER_ID)
+    row = CustomIndicator(user_id=user.id)
     _apply(row, body)
     session.add(row)
     session.commit()
@@ -121,8 +122,8 @@ def create(body: CustomIn, session: SessionDep) -> CustomOut:
 
 
 @router.put("/{ind_id}", response_model=CustomOut)
-def update(ind_id: str, body: CustomIn, session: SessionDep) -> CustomOut:
-    row = get_custom(session, ind_id)
+def update(user: UserDep, ind_id: str, body: CustomIn, session: SessionDep) -> CustomOut:
+    row = get_custom(session, ind_id, user.id)
     _compile(body)
     _apply(row, body)
     session.commit()
@@ -130,7 +131,7 @@ def update(ind_id: str, body: CustomIn, session: SessionDep) -> CustomOut:
 
 
 @router.delete("/{ind_id}", status_code=204)
-def delete(ind_id: str, session: SessionDep) -> None:
-    row = get_custom(session, ind_id)
+def delete(user: UserDep, ind_id: str, session: SessionDep) -> None:
+    row = get_custom(session, ind_id, user.id)
     session.delete(row)
     session.commit()

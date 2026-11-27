@@ -847,6 +847,36 @@
     "title": "ItemIn",
     "type": "object"
    },
+   "JobIn": {
+    "properties": {
+     "date": {
+      "anyOf": [
+       {
+        "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Date"
+     },
+     "kind": {
+      "title": "Kind",
+      "type": "string"
+     },
+     "market": {
+      "title": "Market",
+      "type": "string"
+     }
+    },
+    "required": [
+     "kind",
+     "market"
+    ],
+    "title": "JobIn",
+    "type": "object"
+   },
    "KeyLevel": {
     "properties": {
      "kind": {
@@ -885,6 +915,19 @@
      "note"
     ],
     "title": "KeyLevel",
+    "type": "object"
+   },
+   "MeIn": {
+    "properties": {
+     "phone": {
+      "default": "",
+      "maxLength": 32,
+      "pattern": "^[0-9+()\\- ]*$",
+      "title": "Phone",
+      "type": "string"
+     }
+    },
+    "title": "MeIn",
     "type": "object"
    },
    "ParamOut": {
@@ -1093,6 +1136,34 @@
     "title": "Usage",
     "type": "object"
    },
+   "UserPatch": {
+    "properties": {
+     "disabled": {
+      "anyOf": [
+       {
+        "type": "boolean"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Disabled"
+     },
+     "is_admin": {
+      "anyOf": [
+       {
+        "type": "boolean"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Is Admin"
+     }
+    },
+    "title": "UserPatch",
+    "type": "object"
+   },
    "ValidationError": {
     "properties": {
      "ctx": {
@@ -1243,6 +1314,279 @@
  },
  "openapi": "3.1.0",
  "paths": {
+  "/admin/jobs": {
+   "post": {
+    "operationId": "start_job_admin_jobs_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/JobIn"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Start Job Admin Jobs Post",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Start Job",
+    "tags": [
+     "admin"
+    ]
+   }
+  },
+  "/admin/jobs/{job_id}": {
+   "get": {
+    "description": "A job and its output lines from `since` on (the dashboard follows a running job with this).",
+    "operationId": "job_log_admin_jobs__job_id__get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "job_id",
+      "required": true,
+      "schema": {
+       "title": "Job Id",
+       "type": "integer"
+      }
+     },
+     {
+      "in": "query",
+      "name": "since",
+      "required": false,
+      "schema": {
+       "default": 0,
+       "minimum": 0,
+       "title": "Since",
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Job Log Admin Jobs  Job Id  Get",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Job Log",
+    "tags": [
+     "admin"
+    ]
+   }
+  },
+  "/admin/status": {
+   "get": {
+    "description": "The dashboard: data per exchange, the jobs an admin can run, the running job and the recent ones.",
+    "operationId": "status_admin_status_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Status Admin Status Get",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Status",
+    "tags": [
+     "admin"
+    ]
+   }
+  },
+  "/admin/users": {
+   "get": {
+    "operationId": "users_admin_users_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Users Admin Users Get",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Users",
+    "tags": [
+     "admin"
+    ]
+   }
+  },
+  "/admin/users.csv": {
+   "get": {
+    "operationId": "users_csv_admin_users_csv_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Users Csv",
+    "tags": [
+     "admin"
+    ]
+   }
+  },
+  "/admin/users/{uid}": {
+   "get": {
+    "operationId": "user_detail_admin_users__uid__get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "uid",
+      "required": true,
+      "schema": {
+       "title": "Uid",
+       "type": "integer"
+      }
+     },
+     {
+      "in": "query",
+      "name": "days",
+      "required": false,
+      "schema": {
+       "default": 90,
+       "maximum": 3650,
+       "minimum": 1,
+       "title": "Days",
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response User Detail Admin Users  Uid  Get",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "User Detail",
+    "tags": [
+     "admin"
+    ]
+   },
+   "patch": {
+    "operationId": "update_user_admin_users__uid__patch",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "uid",
+      "required": true,
+      "schema": {
+       "title": "Uid",
+       "type": "integer"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/UserPatch"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Update User Admin Users  Uid  Patch",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Update User",
+    "tags": [
+     "admin"
+    ]
+   }
+  },
   "/ai/explain": {
    "post": {
     "operationId": "explain_chart_ai_explain_post",
@@ -1507,6 +1851,153 @@
     "summary": "Update Alert",
     "tags": [
      "alerts"
+    ]
+   }
+  },
+  "/auth/google/callback": {
+   "get": {
+    "operationId": "google_callback_auth_google_callback_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Google Callback",
+    "tags": [
+     "auth"
+    ]
+   }
+  },
+  "/auth/google/login": {
+   "get": {
+    "operationId": "google_login_auth_google_login_get",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "next",
+      "required": false,
+      "schema": {
+       "default": "/",
+       "title": "Next",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Google Login",
+    "tags": [
+     "auth"
+    ]
+   }
+  },
+  "/auth/logout": {
+   "post": {
+    "operationId": "logout_auth_logout_post",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Logout Auth Logout Post",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Logout",
+    "tags": [
+     "auth"
+    ]
+   }
+  },
+  "/auth/me": {
+   "get": {
+    "operationId": "me_auth_me_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Me Auth Me Get",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Me",
+    "tags": [
+     "auth"
+    ]
+   },
+   "put": {
+    "operationId": "update_me_auth_me_put",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/MeIn"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Update Me Auth Me Put",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Update Me",
+    "tags": [
+     "auth"
     ]
    }
   },
@@ -2579,7 +3070,7 @@
   },
   "/scanner/run": {
    "post": {
-    "description": "Start a scan (a scan already saved is not run again: 409).",
+    "description": "Start a scan (admins: the nightly job runs them for everyone; a scan already saved is not run again: 409).",
     "operationId": "run_scan_scanner_run_post",
     "requestBody": {
      "content": {
@@ -2979,6 +3470,7 @@
   },
   "/screener/patterns-today/run": {
    "post": {
+    "description": "Screen a session now (admins: the nightly job screens for everyone).",
     "operationId": "run_screener_patterns_today_run_post",
     "requestBody": {
      "content": {

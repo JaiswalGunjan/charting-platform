@@ -155,3 +155,105 @@ class AiLog(Base):
     context_json: Mapped[dict] = mapped_column(JSON)
     output_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     error: Mapped[str | None] = mapped_column(String(512), nullable=True)
+
+
+# ---------------------------------------------------------------- users, sign-in and activity (app/auth)
+class User(Base):
+    """A person who signs in. Google gives the profile (basic scopes: openid email profile); the rest is ours.
+    id 1 is the built-in local user (AUTH_MODE=local, and the owner of the data from before sign-in existed)."""
+    __tablename__ = "users"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    provider: Mapped[str] = mapped_column(String(16), default="google")       # google | local
+    subject: Mapped[str] = mapped_column(String(64))                          # Google's permanent user id ("sub")
+    email: Mapped[str] = mapped_column(String(320), index=True)
+    email_verified: Mapped[bool] = mapped_column(Boolean, default=False)
+    name: Mapped[str] = mapped_column(String(200), default="")
+    given_name: Mapped[str] = mapped_column(String(100), default="")
+    family_name: Mapped[str] = mapped_column(String(100), default="")
+    picture: Mapped[str] = mapped_column(String(500), default="")
+    locale: Mapped[str] = mapped_column(String(16), default="")
+    hosted_domain: Mapped[str] = mapped_column(String(100), default="")       # Google Workspace domain ("hd")
+    phone: Mapped[str] = mapped_column(String(32), default="")               # not from Google: entered by the user
+    is_admin: Mapped[bool] = mapped_column(Boolean, default=False)
+    disabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[float] = mapped_column(Float, default=_now)
+    first_login_at: Mapped[float | None] = mapped_column(Float, nullable=True)
+    last_login_at: Mapped[float | None] = mapped_column(Float, nullable=True)
+    last_seen_at: Mapped[float | None] = mapped_column(Float, nullable=True)
+    login_count: Mapped[int] = mapped_column(Integer, default=0)
+    request_count: Mapped[int] = mapped_column(BigInteger, default=0)
+    active_seconds: Mapped[float] = mapped_column(Float, default=0.0)
+    last_ip: Mapped[str] = mapped_column(String(64), default="")
+    last_location: Mapped[str] = mapped_column(String(200), default="")
+    last_user_agent: Mapped[str] = mapped_column(String(400), default="")
+
+    __table_args__ = (UniqueConstraint("provider", "subject", name="uq_users_provider_subject"),)
+
+
+class UserSession(Base):
+    """A signed-in browser. The cookie holds a random token; only its SHA-256 is stored, so a leaked table cannot be
+    used to sign in."""
+    __tablename__ = "user_sessions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    created_at: Mapped[float] = mapped_column(Float, default=_now)
+    expires_at: Mapped[float] = mapped_column(Float)
+    last_seen_at: Mapped[float] = mapped_column(Float, default=_now)
+    active_seconds: Mapped[float] = mapped_column(Float, default=0.0)
+    requests: Mapped[int] = mapped_column(Integer, default=0)
+    ip: Mapped[str] = mapped_column(String(64), default="")
+    user_agent: Mapped[str] = mapped_column(String(400), default="")
+    ended_at: Mapped[float | None] = mapped_column(Float, nullable=True)       # sign-out
+
+
+class LoginEvent(Base):
+    """One sign-in (or a refused one): when, from where, with what."""
+    __tablename__ = "login_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True)
+    at: Mapped[float] = mapped_column(Float, default=_now, index=True)
+    ok: Mapped[bool] = mapped_column(Boolean, default=True)
+    reason: Mapped[str] = mapped_column(String(200), default="")             # why a sign-in was refused
+    email: Mapped[str] = mapped_column(String(320), default="")
+    ip: Mapped[str] = mapped_column(String(64), default="")
+    country: Mapped[str] = mapped_column(String(64), default="")
+    region: Mapped[str] = mapped_column(String(100), default="")
+    city: Mapped[str] = mapped_column(String(100), default="")
+    user_agent: Mapped[str] = mapped_column(String(400), default="")
+
+
+class UserDay(Base):
+    """A user's activity on one day (UTC): requests and active time (gaps under 5 minutes between requests)."""
+    __tablename__ = "user_days"
+
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    day: Mapped[str] = mapped_column(String(10), primary_key=True)            # YYYY-MM-DD
+    requests: Mapped[int] = mapped_column(Integer, default=0)
+    active_seconds: Mapped[float] = mapped_column(Float, default=0.0)
+    first_seen_at: Mapped[float] = mapped_column(Float, default=_now)
+    last_seen_at: Mapped[float] = mapped_column(Float, default=_now)
+
+
+class UserFeatureDay(Base):
+    """Requests per feature (chart, screener, scanner, ai, ...) per user and day."""
+    __tablename__ = "user_feature_days"
+
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    day: Mapped[str] = mapped_column(String(10), primary_key=True)
+    feature: Mapped[str] = mapped_column(String(32), primary_key=True)
+    count: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class UserSymbol(Base):
+    """The stocks a user opened: how often, first and last time."""
+    __tablename__ = "user_symbols"
+
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    symbol: Mapped[str] = mapped_column(String(80), primary_key=True)
+    count: Mapped[int] = mapped_column(Integer, default=0)
+    first_at: Mapped[float] = mapped_column(Float, default=_now)
+    last_at: Mapped[float] = mapped_column(Float, default=_now)

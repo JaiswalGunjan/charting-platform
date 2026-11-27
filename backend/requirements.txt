@@ -7,6 +7,9 @@ pandas>=2.2
 kiteconnect>=5.0
 redis>=5.0
 anthropic>=2.12
+authlib>=1.3          # Google sign-in (OpenID Connect)
+itsdangerous>=2.1     # signs the short-lived sign-in state
+maxminddb>=2.5        # reads DB-IP's IP to City Lite (.mmdb) for sign-in locations
 tzdata>=2024.1   # IANA zones for zoneinfo on Windows (US session times)
 # Postgres driver (only needed when DATABASE_URL points at Postgres/TimescaleDB; used by the local trial)
 # psycopg[binary]>=3.2   (installed in .venv: 3.3.9)

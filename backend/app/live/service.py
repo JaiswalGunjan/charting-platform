@@ -23,8 +23,9 @@ TickListener = Callable[[Tick, FormingBars], Awaitable[None] | None]
 class Connection:
     """One WebSocket client. Updates are conflated and flushed every `throttle_s`."""
 
-    def __init__(self, send_json: Callable[[Any], Awaitable[None]], throttle_s: float):
+    def __init__(self, send_json: Callable[[Any], Awaitable[None]], throttle_s: float, user_id: int | None = None):
         self.send_json = send_json
+        self.user_id = user_id                  # whose browser tab: alerts go to their owner only
         self.throttle_s = throttle_s
         self.subs: dict[str, set[str]] = {}     # symbol -> {tf}
         self.pending: dict[tuple, dict] = {}
@@ -96,14 +97,20 @@ class LiveService:
         self.listeners.append(fn)
 
     # ---- subscriptions ---------------------------------------------------
-    def new_connection(self, send_json: Callable[[Any], Awaitable[None]]) -> Connection:
-        conn = Connection(send_json, self.throttle_s)
+    def new_connection(self, send_json: Callable[[Any], Awaitable[None]], user_id: int | None = None) -> Connection:
+        conn = Connection(send_json, self.throttle_s, user_id)
         self.all_conns.add(conn)
         return conn
 
     def broadcast(self, msg: dict) -> None:
         for conn in self.all_conns:
             conn.push_event(msg)
+
+    def send_to_user(self, user_id: int, msg: dict) -> None:
+        """A message for one user's open tabs only (their price alerts)."""
+        for conn in self.all_conns:
+            if conn.user_id == user_id:
+                conn.push_event(msg)
 
     async def subscribe(self, conn: Connection, symbol: str, tf: str) -> dict:
         get_timeframe(tf)  # raises ValueError for bad tf

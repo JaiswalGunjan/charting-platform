@@ -63,6 +63,17 @@ name = "drop chart pages"
 cwd = "{backend}"
 command = ["{app_py}", "-m", "app.cli", "scanner-slim"]
 
+# Chores of every run, trading day or not (a failed one is logged, the run goes on)
+[[maintenance]]
+name = "IP location database (monthly)"
+cwd = "{backend}"
+command = ["{app_py}", "-m", "app.cli", "update-geoip", "--if-older-days", "30"]
+
+[[maintenance]]
+name = "delete old sign-in and activity records"
+cwd = "{backend}"
+command = ["{app_py}", "-m", "app.cli", "prune-activity"]
+
 [screen]
 name = "pattern screen"
 cwd = "{backend}"

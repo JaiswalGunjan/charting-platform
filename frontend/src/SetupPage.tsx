@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { ScannerSignal } from "./api";
 import Logo from "./Logo";
+import UserMenu from "./UserMenu";
 import ScannerPanel from "./ScannerPanel";
 import { useTheme, type Theme } from "./theme";
 
@@ -40,6 +41,7 @@ export default function SetupPage() {
         <button className="theme-toggle" onClick={flip} title={theme === "dark" ? "Switch to day view" : "Switch to night view"}>
           {theme === "dark" ? "☾ Night" : "☀ Day"}
         </button>
+        <UserMenu />
       </header>
       <main className="main setup-main">
         <ScannerPanel page selected={selected} onPick={setSelected} />

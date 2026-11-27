@@ -146,6 +146,27 @@ def cmd_import_minute(args: argparse.Namespace) -> None:
           f"{r.not_ours[:5]}; {len(r.no_factor)} without daily bars {r.no_factor[:5]}")
 
 
+def cmd_update_geoip(args: argparse.Namespace) -> None:
+    """The IP-to-location database for sign-in locations (DB-IP City Lite), then the locations missing so far."""
+    from app.auth import geoip
+
+    got = geoip.refresh(if_older_days=args.if_older_days, force=args.force or args.if_older_days is None)
+    print(f"downloaded {got['month']} ({got['bytes'] / 1e6:,.0f} MB) to {geoip.DEFAULT_DB}" if got
+          else f"up to date: {geoip.info()['path']} ({geoip.age_days():.0f} days old)")
+    init_db()                                   # the sign-in tables, if the app has not made them yet
+    print("locations filled in:", geoip.backfill(SessionLocal))
+
+
+def cmd_prune_activity(args: argparse.Namespace) -> None:
+    """Delete sign-in records and activity older than ACTIVITY_RETENTION_DAYS (or --days)."""
+    from app.api.admin import prune
+    from app.config import get_settings
+
+    days = args.days or get_settings().activity_retention_days
+    init_db()
+    print(f"older than {days} days, deleted:", prune(SessionLocal, days))
+
+
 def cmd_minute_store(args: argparse.Namespace) -> None:
     """The minute-bar store (BAR_STORES=1m=timescale): set it up, show its size, apply its policies now."""
     from app.marketdata.minute_store import TimescaleMinuteStore
@@ -256,6 +277,13 @@ def main(argv: list[str] | None = None) -> None:
     im.add_argument("--dir", default="", help="the exchange's Parquet folder (default: <eod-dir>/market_data_minute/<EX>)")
     im.add_argument("--limit", type=int, default=0, help="only the first N files to import (a test run)")
     im.set_defaults(fn=cmd_import_minute)
+    gi = sub.add_parser("update-geoip", help="download the IP-to-location database (DB-IP City Lite, monthly)")
+    gi.add_argument("--if-older-days", type=float, default=None, help="only when the file is older than this")
+    gi.add_argument("--force", action="store_true")
+    gi.set_defaults(fn=cmd_update_geoip)
+    pa = sub.add_parser("prune-activity", help="delete sign-in records and user activity past ACTIVITY_RETENTION_DAYS")
+    pa.add_argument("--days", type=int, default=0)
+    pa.set_defaults(fn=cmd_prune_activity)
     ms = sub.add_parser("minute-store", help="minute bars in TimescaleDB: set up, size, policies (BAR_STORES=1m=timescale)")
     ms.add_argument("--compress", action="store_true", help="compress the chunks past the window now")
     ms.add_argument("--prune", action="store_true", help="drop the chunks older than MINUTE_RETENTION_DAYS now")

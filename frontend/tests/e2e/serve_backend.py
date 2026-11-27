@@ -52,6 +52,9 @@ os.environ.update(
     SETUP_SCANNERS="swingscanner,none",  # two setup scanners side by side: the Setup Screener shows a picker
     SCREENS_DIR=str(tmp / "screens"),   # never overwrite the owner's saved "patterns today" screens
     BAR_STORES="",                      # minute bars in the test database, never the owner's PostgreSQL
+    ADMIN_JOBS_DRY_RUN="true",          # dashboard jobs only log what they would do
+    DAILY_LOGS_DIR=str(tmp / "logs"),   # and never touch the real job logs
+    AUTH_MODE="local",                  # signed in as the local user (sign-in itself: backend test_m26, e2e auth.spec)
     MINUTE_DATABASE_URL="",
     SCANNER_URL="http://127.0.0.1:9",   # nothing listens there: the scanner reads as offline
 )

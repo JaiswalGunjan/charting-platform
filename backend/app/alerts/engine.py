@@ -50,6 +50,7 @@ class Rule:
     message: str
     prev: float | None  # last price seen by this rule
     was_true: bool = False
+    user_id: int | None = None   # the owner: a fired alert goes to their open tabs only
 
     def check(self, cur: float) -> bool:
         """Advance with a new price; True if the rule fires now."""
@@ -93,7 +94,8 @@ class AlertEngine:
         quote = self.live.quote(full) or {}
         prev = a.ref_price if a.ref_price is not None else quote.get("ltp")
         self.by_symbol.setdefault(full, {})[a.id] = Rule(
-            a.id, full, cond["op"], float(cond["price"]), a.once, a.message or describe(full, cond), prev)
+            a.id, full, cond["op"], float(cond["price"]), a.once, a.message or describe(full, cond), prev,
+            user_id=a.user_id)
 
     async def disarm(self, alert_id: int) -> None:
         for full, rules in list(self.by_symbol.items()):
@@ -111,10 +113,14 @@ class AlertEngine:
 
     def _fire(self, rule: Rule, tick: Tick) -> None:
         log.info("alert %s fired: %s @ %s", rule.id, rule.message, tick.price)
-        self.live.broadcast({
+        msg = {
             "type": "alert", "alert_id": rule.id, "symbol": rule.symbol, "message": rule.message,
             "price": tick.price, "ts": tick.ts, "condition": {"op": rule.op, "price": rule.price},
-        })
+        }
+        if rule.user_id is None:
+            self.live.broadcast(msg)
+        else:
+            self.live.send_to_user(rule.user_id, msg)
         if rule.once:
             self.by_symbol[rule.symbol].pop(rule.id, None)
             if not self.by_symbol[rule.symbol]:

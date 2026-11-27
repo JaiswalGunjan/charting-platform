@@ -62,9 +62,9 @@ un-tests.ps1 -SkipE2E # without the browser tests
 
 | Suite | Where | What it guards |
 |---|---|---|
-| Backend, pytest (345 + 5 on PostgreSQL) | `backend/tests/` | data import (daily/hourly/names/CLI), every timeframe incl. US sessions and paging, all 50 indicators vs reference maths, formula language and its sandbox, live bars and WebSocket, alerts, watchlists, AI analyst (fake LLM), drawings API, chart patterns (parity with swingbt when present), screeners, the daily job, replaceable parts (fake adapters) and the API contract |
-| Frontend unit, Vitest (75) | `frontend/tests/unit/` | date-range presets (incl. month-end clamping), time zones and DST, drawing geometry, time<->pixel mapping and hit-testing, indicator labels/styles, number formats |
-| Browser end-to-end, Playwright (25) | `frontend/tests/e2e/` | every user flow in a real browser: load, live ticks, symbol search, timeframe menu, ranges, theme, indicators and settings, custom formulas, drawing tools and saving, pattern menu and counts, alerts |
+| Backend, pytest (393, + 5 more on PostgreSQL) | `backend/tests/` | data import (daily/hourly/names/CLI), every timeframe incl. US sessions and paging, all 50 indicators vs reference maths, formula language and its sandbox, live bars and WebSocket, alerts, watchlists, AI analyst (fake LLM), drawings API, chart patterns (parity with swingbt when present), screeners, the daily job, replaceable parts (fake adapters) and the API contract |
+| Frontend unit, Vitest (78) | `frontend/tests/unit/` | date-range presets (incl. month-end clamping), time zones and DST, drawing geometry, time<->pixel mapping and hit-testing, indicator labels/styles, number formats |
+| Browser end-to-end, Playwright (31) | `frontend/tests/e2e/` | every user flow in a real browser: load, live ticks, symbol search, timeframe menu, ranges, theme, indicators and settings, custom formulas, drawing tools and saving, pattern menu and counts, alerts |
 
 The end-to-end tests start their own backend on :8010 with a fresh, seeded synthetic database and a dev server
 on :5180, so your data and running servers are never touched. Locally they use the installed Microsoft Edge;
@@ -208,6 +208,49 @@ change stdev highest lowest sum atr vwma crossover crossunder where nz abs sqrt 
 Parsing uses Python's `ast` with a whitelist of node types and names, and evaluation is a small
 numpy interpreter, so nothing reaches `eval`. This is meant as the first slice of our own
 scripting language, not a final syntax (`backend/app/indicators/formula.py`).
+
+## Sign-in and users
+
+Nothing opens without signing in: every API route, the live WebSocket and the scanner's report pages need a signed-in
+user, and any link (`/?symbol=…`, `/?page=setups`, `/?scan=…`) shows the sign-in page first, then returns to that link.
+
+* **Google** (`AUTH_MODE=google`): "Sign in with Google" (OpenID Connect, basic scopes `openid email profile`: free, no
+  Google review, no user limit once the app is published; 100 listed test users while it is in Testing). Set up once
+  in Google Cloud Console: an OAuth client ID of type *Web application* with the redirect URI
+  `http://localhost:5173/api/auth/google/callback` (and the live site's later), then in `.env`:
+  `AUTH_MODE=google`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `SESSION_SECRET` (a long random string),
+  `ADMIN_EMAILS` (comma list), and on HTTPS `COOKIE_SECURE=true`, `PUBLIC_URL=https://…`.
+* **Local** (`AUTH_MODE=local`, development and the tests): this computer is the built-in local user (id 1, the owner
+  of the data from before sign-in existed); refused for any other address.
+* Each user has their own watchlists, drawings, custom indicators and alerts (a fired alert goes to its owner's tabs
+  only). Admins (`ADMIN_EMAILS`) run scans and screens by hand (the nightly job runs them for everyone) and see the
+  **Users** page (`/?page=users`, the account menu): every user with sign-ins, last sign-in and activity, active time,
+  days active, requests, last IP and place, and per user the stocks opened, features used, recent sign-ins (with
+  refused ones) and daily activity; **Download CSV** for a spreadsheet; make admin, disable (signs out everywhere).
+* What is recorded: Google's profile (name, email, verified, picture, language, Workspace domain, Google's user id);
+  every sign-in (time, IP, browser, approximate location from DB-IP's free IP to City Lite database, kept on this
+  server: `python -m app.cli update-geoip` downloads it, the nightly job refreshes it monthly; credited as "IP
+  Geolocation by DB-IP" (CC BY 4.0) on the Users page);
+  activity counted per request (active time = gaps under 5 minutes). Phone is not from Google (it needs a reviewed
+  scope): a field the user can fill. The sign-in page says what is recorded; `python -m app.cli prune-activity`
+  deletes records older than `ACTIVITY_RETENTION_DAYS` (365).
+* Sessions: a random token in an HttpOnly, SameSite=Lax cookie (30 days, `SESSION_DAYS`); only its SHA-256 is stored;
+  sign-out ends it at once. After sign-in only a path on this site is followed (no open redirect).
+
+## Admin dashboard
+
+`/?page=admin` (account menu → **Admin**; admins only, `ADMIN_EMAILS`):
+
+* **Run**, for a market (NSE, or US = NYSE + NASDAQ) and a session (default: the latest):
+  **⭳ Download EOD data** (download + import), **▤ Run setup screener**, **▦ Run pattern screener**,
+  **⟳ Full update** (all of it, like the nightly job). Each runs the nightly job's own steps
+  (`scripts/daily_update.py --only … --now`: the download tries once, at once) as a separate process; one job at a
+  time; its output shows live, and the last 30 jobs (who ran them, how long, the result, their output) are kept.
+* **Data**: per exchange its symbols, last daily and minute bar, last setup scan, last daily and weekly pattern screen.
+* **Users** (`/?page=users`): see Sign-in and users.
+
+Anyone else gets "Not available" on `/?page=admin` and `/?page=users`, whatever link they use (nothing of those pages
+loads), the API refuses every `/admin/*` call (403) and the Run buttons, and no Run buttons or admin menu are shown.
 
 ## Replaceable parts
 

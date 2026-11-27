@@ -32,6 +32,20 @@ class Settings(BaseSettings):
     minute_retention_days: int = 730      # chunks older than this are dropped; older bars are not written
     minute_compress_after_days: int = 30
     markets_file: str = ""                # the market registry (default: app/markets.toml)
+
+    # sign-in (app/auth, app/api/auth.py)
+    auth_mode: str = "google"             # google | local (local: this computer is the built-in local user; dev/tests)
+    google_client_id: str = ""            # Google Cloud Console -> Credentials -> OAuth client ID (Web application)
+    google_client_secret: str = ""
+    public_url: str = "http://localhost:5173"   # where the UI is served; Google's redirect URI is
+    api_prefix: str = "/api"                    #   public_url + api_prefix + /auth/google/callback
+    session_secret: str = ""              # signs the short-lived sign-in state cookie; empty: random at each start
+    session_days: int = 30                # a sign-in lasts this long
+    cookie_secure: bool = False           # True on HTTPS (the live site)
+    admin_emails: str = ""                # comma list: these users are admins (run scans, see user stats)
+    trust_proxy: bool = False             # behind a reverse proxy: the client IP is X-Forwarded-For's first entry
+    activity_retention_days: int = 365    # sign-in records and daily activity older than this are deleted
+    admin_jobs_dry_run: bool = False      # dashboard jobs only log what they would do (browser tests)
     # a live feed per exchange: "NSE=kite,BSE=kite,NYSE=mypkg.vendor:Ticks" (kite | synthetic | static | import path);
     # exchanges not named use the default feed (kite when DATA_SOURCE=kite, else simulated or none)
     tick_sources: str = ""

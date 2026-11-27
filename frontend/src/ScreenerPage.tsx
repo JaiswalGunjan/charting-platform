@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api, type PatternMeta, type TodayRow } from "./api";
 import Logo from "./Logo";
+import UserMenu from "./UserMenu";
 import PatternsToday from "./PatternsToday";
 import { useTheme, type Theme } from "./theme";
 
@@ -47,6 +48,7 @@ export default function ScreenerPage() {
         <button className="theme-toggle" onClick={flip} title={theme === "dark" ? "Switch to day view" : "Switch to night view"}>
           {theme === "dark" ? "☾ Night" : "☀ Day"}
         </button>
+        <UserMenu />
       </header>
       <main className="main">
         <PatternsToday

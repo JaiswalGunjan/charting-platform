@@ -4,6 +4,7 @@ import logging
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
+from app.auth.deps import UserDep
 from app.ai.analyst import DISCLAIMER, AnalystError, AnalystUnavailable, ChartAnalysis, ChartAnalyst
 from app.ai.context import build_context
 from app.api.deps import timeframe_or_400
@@ -45,7 +46,7 @@ def get_analyst(request: Request) -> ChartAnalyst:
 
 
 @router.post("/explain", response_model=ExplainOut)
-async def explain_chart(body: ExplainIn, request: Request) -> ExplainOut:
+async def explain_chart(user: UserDep, body: ExplainIn, request: Request) -> ExplainOut:
     tf = timeframe_or_400(body.tf)
     sf = request.app.state.session_factory
 
@@ -68,7 +69,7 @@ async def explain_chart(body: ExplainIn, request: Request) -> ExplainOut:
                           context=ctx, usage=None, log_id=None)
 
     analyst = get_analyst(request)
-    entry = AiLog(feature="explain_chart", symbol=full, tf=tf.name, model=analyst.model, context_json=ctx)
+    entry = AiLog(user_id=user.id, feature="explain_chart", symbol=full, tf=tf.name, model=analyst.model, context_json=ctx)
     status, err = 200, None
     try:
         res = await analyst.explain(ctx)

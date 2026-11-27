@@ -1,3 +1,4 @@
+import { signedOut } from "./auth";
 // One shared WebSocket for the whole app: ref-counted subscriptions, auto-reconnect
 // (re-subscribing everything), and a simple listener bus.
 import type { LiveBar, Quote } from "./api";
@@ -36,7 +37,8 @@ class LiveClient {
       const msg = JSON.parse(e.data) as ServerMsg;
       this.listeners.forEach((l) => l(msg));
     };
-    ws.onclose = () => {
+    ws.onclose = (e) => {
+      if (e.code === 4401) signedOut();               // the server refused the live connection: not signed in
       this.ws = null;
       this.setState("closed");
       const delay = Math.min(10_000, 500 * 2 ** this.retry++);

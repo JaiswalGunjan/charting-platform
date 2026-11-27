@@ -2,11 +2,12 @@
 (SETUP_SCANNERS, see app/providers.py): every endpoint takes `scanner` (a scanner's name; default: the first), and
 adds what is the product's own: company names, ranking, and on-screen wording (no buy / sell
 words, no rulebook codes)."""
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy import select
 
 from app.api.deps import SessionDep
+from app.auth.deps import require_admin
 from app.models import Symbol
 from app.ports import ScannerOffline, ScanRefused
 from app.providers import ProviderError, setup_scanner, setup_scanners
@@ -81,9 +82,9 @@ class RunIn(BaseModel):
     scanner: str | None = None             # default: the first scanner
 
 
-@router.post("/run")
+@router.post("/run", dependencies=[Depends(require_admin)])
 def run_scan(body: RunIn) -> dict:
-    """Start a scan (a scan already saved is not run again: 409)."""
+    """Start a scan (admins: the nightly job runs them for everyone; a scan already saved is not run again: 409)."""
     try:
         return _sc(body.scanner).run(body.market.upper(), body.date)
     except ScannerOffline as e:

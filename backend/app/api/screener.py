@@ -3,9 +3,10 @@ import dataclasses
 import threading
 import time
 
-from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
+from app.auth.deps import require_admin
 from app.patterns import screener as sc
 from app.wording import neutral_all
 
@@ -41,8 +42,9 @@ class RunIn(BaseModel):
     date: str | None = Field(None, pattern=r"^\d{4}-\d{2}-\d{2}$")   # a past session; default: the latest
 
 
-@router.post("/patterns-today/run")
+@router.post("/patterns-today/run", dependencies=[Depends(require_admin)])
 def run(body: RunIn, request: Request) -> dict:
+    """Screen a session now (admins: the nightly job screens for everyone)."""
     if body.tf not in sc.SCREEN_TFS:
         raise HTTPException(400, f"tf must be one of {sc.SCREEN_TFS}")
     factory = request.app.state.session_factory

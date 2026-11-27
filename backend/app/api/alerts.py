@@ -10,7 +10,8 @@ from sqlalchemy import select
 from app.alerts.engine import AlertEngine, describe, validate_condition
 from app.db import SessionLocal
 from app.marketdata.loader import resolve_symbol
-from app.models import LOCAL_USER_ID, Alert, AlertEvent
+from app.models import Alert, AlertEvent
+from app.auth.deps import UserDep
 
 router = APIRouter(prefix="/alerts", tags=["alerts"])
 
@@ -66,10 +67,10 @@ def _sf(request: Request):
 
 
 @router.get("", response_model=list[AlertOut])
-async def list_alerts(request: Request, status: str | None = None) -> list[AlertOut]:
+async def list_alerts(user: UserDep, request: Request, status: str | None = None) -> list[AlertOut]:
     def q():
         with _sf(request)() as s:
-            stmt = select(Alert).where(Alert.user_id == LOCAL_USER_ID)
+            stmt = select(Alert).where(Alert.user_id == user.id)
             if status:
                 stmt = stmt.where(Alert.status == status)
             return [AlertOut.of(a) for a in s.scalars(stmt.order_by(Alert.id.desc()))]
@@ -77,7 +78,7 @@ async def list_alerts(request: Request, status: str | None = None) -> list[Alert
 
 
 @router.post("", response_model=AlertOut, status_code=201)
-async def create_alert(body: AlertIn, request: Request) -> AlertOut:
+async def create_alert(user: UserDep, body: AlertIn, request: Request) -> AlertOut:
     cond = validate_condition(body.condition.model_dump())
     engine = _engine(request)
     live = getattr(request.app.state, "live", None)
@@ -88,7 +89,7 @@ async def create_alert(body: AlertIn, request: Request) -> AlertOut:
             if sym is None:
                 return None
             quote = live.quote(sym.full) if live else None
-            a = Alert(symbol_id=sym.id, condition_json=cond, message=body.message, once=body.once,
+            a = Alert(user_id=user.id, symbol_id=sym.id, condition_json=cond, message=body.message, once=body.once,
                       ref_price=(quote or {}).get("ltp"))
             s.add(a)
             s.commit()
@@ -104,13 +105,13 @@ async def create_alert(body: AlertIn, request: Request) -> AlertOut:
 
 
 @router.patch("/{alert_id}", response_model=AlertOut)
-async def update_alert(alert_id: int, body: AlertPatch, request: Request) -> AlertOut:
+async def update_alert(user: UserDep, alert_id: int, body: AlertPatch, request: Request) -> AlertOut:
     engine = _engine(request)
 
     def upd():
         with _sf(request)() as s:
             a = s.get(Alert, alert_id)
-            if a is None or a.user_id != LOCAL_USER_ID:
+            if a is None or a.user_id != user.id:
                 return None
             if body.message is not None:
                 a.message = body.message
@@ -133,11 +134,11 @@ async def update_alert(alert_id: int, body: AlertPatch, request: Request) -> Ale
 
 
 @router.delete("/{alert_id}", status_code=204)
-async def delete_alert(alert_id: int, request: Request) -> None:
+async def delete_alert(user: UserDep, alert_id: int, request: Request) -> None:
     def rm():
         with _sf(request)() as s:
             a = s.get(Alert, alert_id)
-            if a is None or a.user_id != LOCAL_USER_ID:
+            if a is None or a.user_id != user.id:
                 return False
             s.delete(a)
             s.commit()
@@ -150,10 +151,10 @@ async def delete_alert(alert_id: int, request: Request) -> None:
 
 
 @router.get("/events", response_model=list[EventOut])
-async def list_events(request: Request, limit: int = Query(50, ge=1, le=500)) -> list[EventOut]:
+async def list_events(user: UserDep, request: Request, limit: int = Query(50, ge=1, le=500)) -> list[EventOut]:
     def q():
         with _sf(request)() as s:
-            stmt = (select(AlertEvent).join(Alert).where(Alert.user_id == LOCAL_USER_ID)
+            stmt = (select(AlertEvent).join(Alert).where(Alert.user_id == user.id)
                     .order_by(AlertEvent.id.desc()).limit(limit))
             return [EventOut(id=e.id, alert_id=e.alert_id, ts=e.ts, price=e.price, message=e.message)
                     for e in s.scalars(stmt)]

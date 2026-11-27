@@ -39,7 +39,7 @@ APP_PY = APP / ".venv" / "Scripts" / "python.exe"
 PROJECTS = APP.parent
 CONFIG = Path(os.environ.get("DAILY_CONFIG", HERE / "daily_update.toml"))
 ENV_PATHS = {"eod": "DAILY_EOD_DIR", "scanner": "DAILY_SCANNER_DIR"}    # environment overrides of [paths]
-LOGS = BACKEND / "data" / "logs"
+LOGS = Path(os.environ.get("DAILY_LOGS_DIR", BACKEND / "data" / "logs"))   # tests use their own
 NSE_HOLIDAYS = BACKEND / "data" / "nse_holidays.json"
 WAITS_MIN = [5] * 5 + [10] * 5          # between attempts: 5 x 5 minutes, then 5 x 10 minutes
 JITTER = 0.2                            # each wait +/-20% at random
@@ -267,9 +267,9 @@ def run(cmd: list, cwd: Path, name: str, timeout: int = 3 * 3600, env: dict | No
     return p.returncode == 0
 
 
-def download(market: Market, day: dt.date, dry: bool, sleep=time.sleep) -> bool:
+def download(market: Market, day: dt.date, dry: bool, sleep=time.sleep, now: bool = False) -> bool:
     """Run the download step until the `done` file of every exchange exists: first try (a random few minutes late),
-    then 5 waits of ~5 minutes and 5 of ~10 minutes."""
+    then 5 waits of ~5 minutes and 5 of ~10 minutes. now=True (an admin's click): one try, at once."""
     targets = [day_file(ex, day, market) for ex in market.exchanges]
     if all(t.is_file() for t in targets):
         log.info("%s data for %s is already here", market.name, day)
@@ -278,23 +278,25 @@ def download(market: Market, day: dt.date, dry: bool, sleep=time.sleep) -> bool:
         log.info("[dry run] would download %s for %s, retrying %s minutes apart (+/-%d%%)", "/".join(market.exchanges),
                  day, WAITS_MIN, JITTER * 100)
         return True
-    first = random.uniform(0, START_JITTER_MIN * 60)
-    log.info("starting in %.1f minutes (random, so the requests are not at the same second every day)", first / 60)
-    sleep(first)
-    for attempt in range(len(WAITS_MIN) + 1):
+    waits = [] if now else WAITS_MIN
+    if not now:
+        first = random.uniform(0, START_JITTER_MIN * 60)
+        log.info("starting in %.1f minutes (random, so the requests are not at the same second every day)", first / 60)
+        sleep(first)
+    for attempt in range(len(waits) + 1):
         dl = CFG["download"]
-        run_step(dl, market, day, name=f"download (attempt {attempt + 1}/{len(WAITS_MIN) + 1})",
+        run_step(dl, market, day, name=f"download (attempt {attempt + 1}/{len(waits) + 1})",
                  timeout=int(dl.get("timeout_min", 60)) * 60)
         missing = [t.name for t in targets if not t.is_file()]
         if not missing:
             log.info("%s data for %s downloaded", market.name, day)
             return True
-        if attempt < len(WAITS_MIN):
-            wait = jittered(WAITS_MIN[attempt] * 60)
+        if attempt < len(waits):
+            wait = jittered(waits[attempt] * 60)
             log.info("not out yet (%s): next try in %.1f minutes", ", ".join(missing), wait / 60)
             sleep(wait)
     log.error("%s data for %s still missing after %d attempts: giving up for today", market.name, day,
-              len(WAITS_MIN) + 1)
+              len(waits) + 1)
     return False
 
 
@@ -323,18 +325,39 @@ def scan(market: Market, exchange: str, day: dt.date) -> bool:
     return False
 
 
-def after_download(market: Market, day: dt.date, dry: bool) -> dict:
+def after_download(market: Market, day: dt.date, dry: bool, only: set[str] | None = None) -> dict:
+    """Import, setup scan (+ slim), pattern screen; `only` picks some of "import", "scan", "screen"."""
+    want = only or {"import", "scan", "screen"}
     ex = ",".join(market.exchanges)
     if dry:
-        log.info("[dry run] would import %s into Charting Lab, run the setup scan(s) for %s, slim them "
-                 "and run the pattern screens", ex, day)
-        return dict(import_eod="dry run", setup_scan="dry run", pattern_screen="dry run")
-    steps = {"import_eod": run_step(CFG["import"], market, day)}
-    steps["setup_scan"] = all([scan(market, e, day) for e in market.exchanges])
-    if CFG.get("slim"):
-        run_step(CFG["slim"], market, day)
-    steps["pattern_screen"] = run_step(CFG["screen"], market, day)
+        log.info("[dry run] would run %s for %s %s", ", ".join(x for x in ("import", "scan", "screen") if x in want),
+                 ex, day)
+        names = {"import": "import_eod", "scan": "setup_scan", "screen": "pattern_screen"}
+        return {names[k]: "dry run" for k in ("import", "scan", "screen") if k in want}
+    steps = {}
+    if "import" in want:
+        steps["import_eod"] = run_step(CFG["import"], market, day)
+    if "scan" in want:
+        steps["setup_scan"] = all([scan(market, e, day) for e in market.exchanges])
+        if CFG.get("slim"):
+            run_step(CFG["slim"], market, day)
+    if "screen" in want:
+        steps["pattern_screen"] = run_step(CFG["screen"], market, day)
     return steps
+
+
+def maintenance(market: Market, day: dt.date, dry: bool) -> dict:
+    """The config's [[maintenance]] steps (the location database, old activity records ...): every run, trading day
+    or not; a failed one is logged and does not fail the run."""
+    out = {}
+    for step in CFG.get("maintenance", []):
+        name = step.get("name", " ".join(step["command"][:3]))
+        if dry:
+            log.info("[dry run] would run %s", name)
+            out[name] = "dry run"
+            continue
+        out[name] = run_step(step, market, day, name=name, timeout=int(step.get("timeout_min", 30)) * 60)
+    return out
 
 
 def main(argv=None) -> int:
@@ -342,7 +365,14 @@ def main(argv=None) -> int:
     ap.add_argument("--market", choices=sorted(MARKETS), required=True)
     ap.add_argument("--date", help="the session (YYYY-MM-DD; default: NSE today in India, US the last New York session)")
     ap.add_argument("--dry-run", action="store_true", help="only log what would be done")
+    ap.add_argument("--only", default="", help="some steps: download,import,scan,screen (a run by hand; default: all, "
+                                                "plus the maintenance chores)")
+    ap.add_argument("--now", action="store_true", help="download at once and try once (no random start, no retries)")
     a = ap.parse_args(argv)
+    only = {x.strip() for x in a.only.split(",") if x.strip()}
+    bad = only - set(("download", "import", "scan", "screen"))
+    if bad:
+        ap.error(f"unknown steps {sorted(bad)}: use download, import, scan, screen")
     market = MARKETS[a.market]
     day = dt.date.fromisoformat(a.date) if a.date else session_day(market)
 
@@ -363,17 +393,21 @@ def main(argv=None) -> int:
         return 0
     lock.write_text(str(os.getpid()))
     try:
+        status["only"] = sorted(only) if only else "all"
+        if not only:
+            status["maintenance"] = maintenance(market, day, a.dry_run)
         ok, why = trading_day(market, day)
         log.info("%s %s: %s", market.name, day, why)
         status["trading_day"] = why
         if not ok:
             status["result"] = f"skipped: {why}"
             return 0
-        if not download(market, day, a.dry_run):
+        if (not only or "download" in only) and not download(market, day, a.dry_run, now=a.now):
             status["result"] = "data not available: nothing else was run"
             return 1
-        status["steps"] = after_download(market, day, a.dry_run)
-        good = all(v is True or v == "dry run" for v in status["steps"].values())
+        rest = (only or {"import", "scan", "screen"}) - {"download"}
+        status["steps"] = after_download(market, day, a.dry_run, rest) if rest else {}
+        good = all(v is True or v == "dry run" for v in status["steps"].values())   # (no steps: the download did it)
         status["result"] = "done" if good else "done with errors"
         log.info("finished: %s", status["result"])
         return 0 if good else 1

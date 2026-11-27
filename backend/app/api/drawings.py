@@ -8,7 +8,8 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 
 from app.api.deps import SessionDep, symbol_or_404
-from app.models import LOCAL_USER_ID, Drawing
+from app.models import Drawing
+from app.auth.deps import UserDep
 
 router = APIRouter(prefix="/drawings", tags=["drawings"])
 
@@ -40,23 +41,23 @@ class DrawingsOut(DrawingsIn):
     updated_at: float | None
 
 
-def _row(session, symbol_id: int) -> Drawing | None:
-    return session.scalar(select(Drawing).where(Drawing.user_id == LOCAL_USER_ID, Drawing.symbol_id == symbol_id))
+def _row(session, uid: int, symbol_id: int) -> Drawing | None:
+    return session.scalar(select(Drawing).where(Drawing.user_id == uid, Drawing.symbol_id == symbol_id))
 
 
 @router.get("", response_model=DrawingsOut)
-def get_drawings(session: SessionDep, symbol: str = Query(...)) -> DrawingsOut:
+def get_drawings(user: UserDep, session: SessionDep, symbol: str = Query(...)) -> DrawingsOut:
     sym = symbol_or_404(session, symbol)
-    row = _row(session, sym.id)
+    row = _row(session, user.id, sym.id)
     return DrawingsOut(symbol=sym.full, items=row.items_json if row else [], updated_at=row.updated_at if row else None)
 
 
 @router.put("", response_model=DrawingsOut)
-def put_drawings(body: DrawingsIn, session: SessionDep, symbol: str = Query(...)) -> DrawingsOut:
+def put_drawings(user: UserDep, body: DrawingsIn, session: SessionDep, symbol: str = Query(...)) -> DrawingsOut:
     sym = symbol_or_404(session, symbol)
-    row = _row(session, sym.id)
+    row = _row(session, user.id, sym.id)
     if row is None:
-        row = Drawing(user_id=LOCAL_USER_ID, symbol_id=sym.id)
+        row = Drawing(user_id=user.id, symbol_id=sym.id)
         session.add(row)
     row.items_json = [i.model_dump(exclude_none=True) for i in body.items]
     row.updated_at = time.time()
